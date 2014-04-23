@@ -5,7 +5,7 @@ require "logstash/inputs/syslog"
 require "logstash/event"
 
 describe "inputs/syslog" do
-  
+
 
   it "should properly handle priority, severity and facilities", :socket => true do
     port = 5511
@@ -16,6 +16,7 @@ describe "inputs/syslog" do
         syslog {
           type => "blah"
           port => #{port}
+          locale => "en"
         }
       }
     CONFIG
@@ -37,6 +38,7 @@ describe "inputs/syslog" do
         insist { events[i]["priority"] } == 164
         insist { events[i]["severity"] } == 4
         insist { events[i]["facility"] } == 20
+        insist { events[i]["@timestamp"] } == "2014-10-26T14:19:25.000Z"
       end
     end
   end
