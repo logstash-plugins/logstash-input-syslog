@@ -13,14 +13,15 @@ require "socket"
 # appliances and network devices where you cannot run your own
 # log collector.
 #
-# Of course, 'syslog' is a very muddy term. This input only supports RFC3164
+# Of course, 'syslog' is a very muddy term. This input only supports `RFC3164`
 # syslog with some small modifications. The date format is allowed to be
-# RFC3164 style or ISO8601. Otherwise the rest of RFC3164 must be obeyed.
-# If you do not use RFC3164, do not use this input.
+# `RFC3164` style or `ISO8601`. Otherwise the rest of `RFC3164` must be obeyed.
+# If you do not use `RFC3164`, do not use this input.
 #
-# For more information see [the RFC3164 page](http://www.ietf.org/rfc/rfc3164.txt).
+# For more information see the http://www.ietf.org/rfc/rfc3164.txt[RFC3164 page].
 #
 # Note: This input will start listeners on both TCP and UDP.
+#
 class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   config_name "syslog"
   milestone 1
