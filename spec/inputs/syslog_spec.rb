@@ -1,5 +1,5 @@
 # coding: utf-8
-require "spec_helper"
+require "logstash/devutils/rspec/spec_helper"
 require "socket"
 require "logstash/inputs/syslog"
 require "logstash/event"
