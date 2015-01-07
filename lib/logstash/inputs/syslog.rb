@@ -1,10 +1,11 @@
 # encoding: utf-8
 require "date"
+require "socket"
+require "concurrent_ruby"
 require "logstash/filters/grok"
 require "logstash/filters/date"
 require "logstash/inputs/base"
 require "logstash/namespace"
-require "socket"
 
 # Read syslog messages as events over the network.
 #
@@ -44,13 +45,28 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # Labels for severity levels. These are defined in RFC3164.
   config :severity_labels, :validate => :array, :default => [ "Emergency" , "Alert", "Critical", "Error", "Warning", "Notice", "Informational", "Debug" ]
 
-  # Locale
+  # Specify a time zone canonical ID to be used for date parsing.
+  # The valid IDs are listed on the [Joda.org available time zones page](http://joda-time.sourceforge.net/timezones.html).
+  # This is useful in case the time zone cannot be extracted from the value,
+  # and is not the platform default.
+  # If this is not specified the platform default will be used.
+  # Canonical ID is good as it takes care of daylight saving time for you
+  # For example, `America/Los_Angeles` or `Europe/France` are valid IDs.
+  config :timezone, :validate => :string
+
+  # Specify a locale to be used for date parsing using either IETF-BCP47 or POSIX language tag.
+  # Simple examples are `en`,`en-US` for BCP47 or `en_US` for POSIX.
+  # If not specified, the platform default will be used.
+  #
+  # The locale is mostly necessary to be set for parsing month names (pattern with MMM) and
+  # weekday names (pattern with EEE).
+  #
   config :locale, :validate => :string
 
   public
   def initialize(params)
     super
-    @shutdown_requested = false
+    @shutdown_requested = Concurrent::AtomicBoolean.new(false)
     BasicSocket.do_not_reverse_lookup = true
   end # def initialize
 
@@ -63,47 +79,28 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       "tag_on_failure" => ["_grokparsefailure_sysloginput"],
     )
 
-    locale = @config["locale"][0] if @config["locale"] != nil and @config["locale"][0] != nil
     @date_filter = LogStash::Filters::Date.new(
       "match" => [ "timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss", "ISO8601"],
-      "locale" => locale
+      "locale" => @locale,
+      "timezone" => @timezone,
     )
 
     @grok_filter.register
     @date_filter.register
 
-    @tcp_clients = ThreadSafe::Array.new
+    @tcp_sockets = ThreadSafe::Array.new
+    @tcp = @udp = nil
   end # def register
 
   public
   def run(output_queue)
-    # udp server
-    udp_thr = Thread.new do
-      begin
-        udp_listener(output_queue)
-      rescue => e
-        break if @shutdown_requested
-        @logger.warn("syslog udp listener died",
-                     :address => "#{@host}:#{@port}", :exception => e,
-                     :backtrace => e.backtrace)
-        sleep(5)
-        retry
-      end # begin
-    end # Thread.new
+    udp_thr = Thread.new(output_queue) do |output_queue|
+      server(:udp, output_queue)
+    end
 
-    # tcp server
-    tcp_thr = Thread.new do
-      begin
-        tcp_listener(output_queue)
-      rescue => e
-        break if @shutdown_requested
-        @logger.warn("syslog tcp listener died",
-                     :address => "#{@host}:#{@port}", :exception => e,
-                     :backtrace => e.backtrace)
-        sleep(5)
-        retry
-      end # begin
-    end # Thread.new
+    tcp_thr = Thread.new(output_queue) do |output_queue|
+      server(:tcp, output_queue)
+    end
 
     # If we exit and we're the only input, the agent will think no inputs
     # are running and initiate a shutdown.
@@ -112,65 +109,94 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   end # def run
 
   private
+  # server call the specified protocol listener and basically restarts on
+  # any listener uncatched exception
+  #
+  # @param protocol [Symbol] either :udp or :tcp
+  # @param output_queue [Queue] the pipeline input to filters queue
+  def server(protocol, output_queue)
+    self.send("#{protocol}_listener", output_queue)
+  rescue => e
+    if @shutdown_requested.false?
+      @logger.warn("syslog listener died", :protocol => protocol, :address => "#{@host}:#{@port}", :exception => e, :backtrace => e.backtrace)
+      sleep(5)
+      retry
+    end
+  end
+
+  private
+  # udp_listener creates the udp socket and continously read from it.
+  # upon exception the socket will be closed and the exception bubbled
+  # in the server which will restart the listener
   def udp_listener(output_queue)
     @logger.info("Starting syslog udp listener", :address => "#{@host}:#{@port}")
 
-    if @udp
-      @udp.close
-    end
-
+    @udp.close if @udp
     @udp = UDPSocket.new(Socket::AF_INET)
     @udp.bind(@host, @port)
 
-    loop do
+    while true
       payload, client = @udp.recvfrom(9000)
-      # Ruby uri sucks, so don't use it.
-      @codec.decode(payload) do |event|
-        decorate(event)
-        event["host"] = client[3]
-        syslog_relay(event)
-        output_queue << event
-      end
+      decode(client[3], output_queue, payload)
     end
   ensure
     close_udp
   end # def udp_listener
 
   private
+  # tcp_listener accepts tcp connections and creates a new tcp_receiver thread
+  # for each accepted socket.
+  # upon exception all tcp sockets will be closed and the exception bubbled
+  # in the server which will restart the listener.
   def tcp_listener(output_queue)
     @logger.info("Starting syslog tcp listener", :address => "#{@host}:#{@port}")
     @tcp = TCPServer.new(@host, @port)
-    @tcp_clients = []
 
     loop do
-      client = @tcp.accept
-      @tcp_clients << client
-      Thread.new(client) do |client|
-        ip, port = client.peeraddr[3], client.peeraddr[1]
-        @logger.info("new connection", :client => "#{ip}:#{port}")
-        LogStash::Util::set_thread_name("input|syslog|tcp|#{ip}:#{port}}")
-        begin
-          client.each do |line|
-            @codec.decode(line) do |event|
-              decorate(event)
-              event["host"] = ip
-              syslog_relay(event)
-              output_queue << event
-            end
-          end
-        rescue Errno::ECONNRESET
-        ensure
-          @tcp_clients.delete(client)
-        end
-      end # Thread.new
-    end # loop do
+      socket = @tcp.accept
+      @tcp_sockets << socket
+
+      break if @shutdown_requested.true?
+
+      Thread.new(output_queue, socket) do |output_queue, socket|
+        tcp_receiver(output_queue, socket)
+      end
+    end
   ensure
     close_tcp
   end # def tcp_listener
 
+  # tcp_receiver is executed in a thread, any uncatched exception will be bubbled up to the
+  # tcp server thread and all tcp connections will be closed and the listener restarted.
+  def tcp_receiver(output_queue, socket)
+    ip, port = socket.peeraddr[3], socket.peeraddr[1]
+    @logger.info("new connection", :client => "#{ip}:#{port}")
+    LogStash::Util::set_thread_name("input|syslog|tcp|#{ip}:#{port}}")
+
+    socket.each { |line| decode(ip, output_queue, line) }
+  rescue Errno::ECONNRESET
+    # swallow connection reset exceptions to avoid bubling up the tcp_listener & server
+  ensure
+    @tcp_sockets.delete(socket)
+    socket.close rescue nil
+  end
+
+  private
+  def decode(host, output_queue, data)
+    @codec.decode(data) do |event|
+      decorate(event)
+      event["host"] = host
+      syslog_relay(event)
+      output_queue << event
+    end
+  rescue => e
+    # swallow and log all decoding exceptions, these will never be socket related
+    @logger.error("Error decoding data", :data => line.inspect, :exception => e, :backtrace => e.backtrace)
+  end
+
   public
   def teardown
-    @shutdown_requested = true
+    @shutdown_requested.make_true
     close_udp
     close_tcp
     finished
@@ -188,8 +214,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   private
   def close_tcp
     # If we somehow have this left open, close it.
-    @tcp_clients.each do |client|
-      client.close rescue nil
+    @tcp_sockets.each do |socket|
+      socket.close rescue nil
     end
     @tcp.close if @tcp rescue nil
     @tcp = nil
