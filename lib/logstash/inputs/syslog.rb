@@ -25,7 +25,6 @@ require "logstash/namespace"
 #
 class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   config_name "syslog"
-  milestone 1
 
   default :codec, "plain"
 
