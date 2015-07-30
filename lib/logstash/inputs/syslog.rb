@@ -1,7 +1,7 @@
 # encoding: utf-8
 require "date"
 require "socket"
-require "concurrent_ruby"
+require "concurrent"
 require "logstash/filters/grok"
 require "logstash/filters/date"
 require "logstash/inputs/base"
