@@ -13,7 +13,7 @@ require "logstash/event"
 require "stud/try"
 require "socket"
 
-describe "inputs/syslog" do
+describe LogStash::Inputs::Syslog do
   SYSLOG_LINE = "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434 dst outside:192.168.0.1/53 by access-group \"acl_drac\" [0x0, 0x0]"
 
   it "should properly handle priority, severity and facilities" do
@@ -139,7 +139,7 @@ describe "inputs/syslog" do
     input.syslog_relay(syslog_event)
     insist { syslog_event["@timestamp"].to_iso8601 } == "#{Time.now.year}-10-26T20:19:25.000Z"
 
-    input.teardown
+    input.close
   end
 
   it "should add unique tag when grok parsing fails" do
@@ -157,7 +157,10 @@ describe "inputs/syslog" do
     insist { syslog_event["severity"] } ==  4
     insist { syslog_event["tags"] } ==  nil
 
-    input.teardown
+    input.close
   end
 
+  it_behaves_like 'an interruptible input plugin' do
+    let(:config) { { "port" => 5511 } }
+  end
 end

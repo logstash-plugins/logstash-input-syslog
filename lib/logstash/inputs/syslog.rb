@@ -6,6 +6,7 @@ require "logstash/filters/grok"
 require "logstash/filters/date"
 require "logstash/inputs/base"
 require "logstash/namespace"
+require "stud/interval"
 
 # Read syslog messages as events over the network.
 #
@@ -65,7 +66,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   public
   def initialize(params)
     super
-    @shutdown_requested = Concurrent::AtomicBoolean.new(false)
     BasicSocket.do_not_reverse_lookup = true
   end # def initialize
 
@@ -116,9 +116,9 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   def server(protocol, output_queue)
     self.send("#{protocol}_listener", output_queue)
   rescue => e
-    if @shutdown_requested.false?
+    if !stop?
       @logger.warn("syslog listener died", :protocol => protocol, :address => "#{@host}:#{@port}", :exception => e, :backtrace => e.backtrace)
-      sleep(5)
+      Stud.stoppable_sleep(5) { stop? }
       retry
     end
   end
@@ -134,7 +134,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @udp = UDPSocket.new(Socket::AF_INET)
     @udp.bind(@host, @port)
 
-    while true
+    while !stop?
       payload, client = @udp.recvfrom(9000)
       decode(client[3], output_queue, payload)
     end
@@ -151,11 +151,9 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @logger.info("Starting syslog tcp listener", :address => "#{@host}:#{@port}")
     @tcp = TCPServer.new(@host, @port)
 
-    loop do
+    while !stop?
       socket = @tcp.accept
       @tcp_sockets << socket
-
-      break if @shutdown_requested.true?
 
       Thread.new(output_queue, socket) do |output_queue, socket|
         tcp_receiver(output_queue, socket)
@@ -194,11 +192,9 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   end
 
   public
-  def teardown
-    @shutdown_requested.make_true
+  def stop
     close_udp
     close_tcp
-    finished
   end
 
   private
