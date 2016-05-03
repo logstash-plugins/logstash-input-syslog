@@ -182,7 +182,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   def decode(host, output_queue, data)
     @codec.decode(data) do |event|
       decorate(event)
-      event["host"] = host
+      event.set("host", host)
       syslog_relay(event)
       output_queue << event
     end
@@ -225,40 +225,40 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   def syslog_relay(event)
     @grok_filter.filter(event)
 
-    if event["tags"].nil? || !event["tags"].include?(@grok_filter.tag_on_failure)
+    if event.get("tags").nil? || !event.get("tags").include?(@grok_filter.tag_on_failure)
       # Per RFC3164, priority = (facility * 8) + severity
       #                       = (facility << 3) & (severity)
-      priority = event["priority"].to_i rescue 13
+      priority = event.get("priority").to_i rescue 13
       severity = priority & 7   # 7 is 111 (3 bits)
       facility = priority >> 3
-      event["priority"] = priority
-      event["severity"] = severity
-      event["facility"] = facility
+      event.set("priority", priority)
+      event.set("facility", severity)
+      event.set("facility", facility)
 
-      event["timestamp"] = event["timestamp8601"] if event.include?("timestamp8601")
+      event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
       @date_filter.filter(event)
     else
-      @logger.info? && @logger.info("NOT SYSLOG", :message => event["message"])
+      @logger.info? && @logger.info("NOT SYSLOG", :message => event.get("message"))
 
       # RFC3164 says unknown messages get pri=13
       priority = 13
-      event["priority"] = 13
-      event["severity"] = 5   # 13 & 7 == 5
-      event["facility"] = 1   # 13 >> 3 == 1
+      event.set("priority", 13)
+      event.set("severity", 5)   # 13 & 7 == 5
+      event.set("facility", 1)   # 13 >> 3 == 1
     end
 
     # Apply severity and facility metadata if
     # use_labels => true
     if @use_labels
-      facility_number = event["facility"]
-      severity_number = event["severity"]
+      facility_number = event.get("facility")
+      severity_number = event.get("severity")
 
       if @facility_labels[facility_number]
-        event["facility_label"] = @facility_labels[facility_number]
+        event.set("facility_label", @facility_labels[facility_number])
       end
 
       if @severity_labels[severity_number]
-        event["severity_label"] = @severity_labels[severity_number]
+        event.set("severity_label", @severity_labels[severity_number])
       end
     end
   end # def syslog_relay

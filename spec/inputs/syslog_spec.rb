@@ -53,9 +53,9 @@ describe LogStash::Inputs::Syslog do
 
     insist { events.length } == event_count
     events.each do |event|
-      insist { event["priority"] } == 164
-      insist { event["severity"] } == 4
-      insist { event["facility"] } == 20
+      insist { event.get("priority") } == 164
+      insist { event.get("severity") } == 4
+      insist { event.get("facility") } == 20
     end
   end
 
@@ -83,7 +83,7 @@ describe LogStash::Inputs::Syslog do
 
     insist { events.length } == event_count
     event_count.times do |i|
-      insist { events[i]["tags"] } == ["_grokparsefailure_sysloginput"]
+      insist { events[i].get("tags") } == ["_grokparsefailure_sysloginput"]
     end
   end
 
@@ -114,7 +114,7 @@ describe LogStash::Inputs::Syslog do
 
     insist { events.length } == event_count
     events.each do |event|
-      insist { event["@timestamp"].to_iso8601 } == "#{Time.now.year}-10-26T15:19:25.000Z"
+      insist { event.get("@timestamp").to_iso8601 } == "#{Time.now.year}-10-26T15:19:25.000Z"
     end
   end
 
@@ -139,7 +139,7 @@ describe LogStash::Inputs::Syslog do
     end
 
     # chances platform timezone is not UTC so ignore the hours
-    insist { event["@timestamp"].to_iso8601 } =~ /#{Time.now.year}-10-26T\d\d:19:25.000Z/
+    insist { event.get("@timestamp").to_iso8601 } =~ /#{Time.now.year}-10-26T\d\d:19:25.000Z/
   end
 
   it "should support non UTC timezone" do
@@ -150,7 +150,7 @@ describe LogStash::Inputs::Syslog do
 
     syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
     input.syslog_relay(syslog_event)
-    insist { syslog_event["@timestamp"].to_iso8601 } == "#{Time.now.year}-10-26T20:19:25.000Z"
+    insist { syslog_event.get("@timestamp").to_iso8601 } == "#{Time.now.year}-10-26T20:19:25.000Z"
 
     input.close
   end
@@ -162,13 +162,13 @@ describe LogStash::Inputs::Syslog do
     # event which is not syslog should have a new tag
     event = LogStash::Event.new({ "message" => "hello world, this is not syslog RFC3164" })
     input.syslog_relay(event)
-    insist { event["tags"] } ==  ["_grokparsefailure_sysloginput"]
+    insist { event.get("tags") } ==  ["_grokparsefailure_sysloginput"]
 
     syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
     input.syslog_relay(syslog_event)
-    insist { syslog_event["priority"] } ==  164
-    insist { syslog_event["severity"] } ==  4
-    insist { syslog_event["tags"] } ==  nil
+    insist { syslog_event.get("priority") } ==  164
+    insist { syslog_event.get("severity") } ==  4
+    insist { syslog_event.get("tags") } ==  nil
 
     input.close
   end
