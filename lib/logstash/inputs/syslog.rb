@@ -232,7 +232,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       severity = priority & 7   # 7 is 111 (3 bits)
       facility = priority >> 3
       event.set("priority", priority)
-      event.set("facility", severity)
+      event.set("severity", severity)
       event.set("facility", facility)
 
       event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
