@@ -71,6 +71,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
   public
   def register
+    @metric_errors = metric.namespace(:errors)
     require "thread_safe"
     @grok_filter = LogStash::Filters::Grok.new(
       "overwrite" => "message",
@@ -118,6 +119,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   rescue => e
     if !stop?
       @logger.warn("syslog listener died", :protocol => protocol, :address => "#{@host}:#{@port}", :exception => e, :backtrace => e.backtrace)
+      @metric_errors.increment(:listener_exception)
       Stud.stoppable_sleep(5) { stop? }
       retry
     end
@@ -136,6 +138,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     while !stop?
       payload, client = @udp.recvfrom(9000)
+      metric.increment(:messages_received)
       decode(client[3], output_queue, payload)
     end
   ensure
@@ -154,6 +157,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     while !stop?
       socket = @tcp.accept
       @tcp_sockets << socket
+      metric.increment(:connections)
 
       Thread.new(output_queue, socket) do |output_queue, socket|
         tcp_receiver(output_queue, socket)
@@ -170,7 +174,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @logger.info("new connection", :client => "#{ip}:#{port}")
     LogStash::Util::set_thread_name("input|syslog|tcp|#{ip}:#{port}}")
 
-    socket.each { |line| decode(ip, output_queue, line) }
+    socket.each do |line|
+      metric.increment(:messages_received)
+      decode(ip, output_queue, line)
+    end
   rescue Errno::ECONNRESET
     # swallow connection reset exceptions to avoid bubling up the tcp_listener & server
   ensure
@@ -185,10 +192,12 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       event.set("host", host)
       syslog_relay(event)
       output_queue << event
+      metric.increment(:events)
     end
   rescue => e
     # swallow and log all decoding exceptions, these will never be socket related
     @logger.error("Error decoding data", :data => data.inspect, :exception => e, :backtrace => e.backtrace)
+    @metric_errors.increment(:decoding)
   end
 
   public
@@ -245,6 +254,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       event.set("priority", 13)
       event.set("severity", 5)   # 13 & 7 == 5
       event.set("facility", 1)   # 13 >> 3 == 1
+      metric.increment(:unkown_messages)
     end
 
     # Apply severity and facility metadata if
