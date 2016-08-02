@@ -119,7 +119,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   rescue => e
     if !stop?
       @logger.warn("syslog listener died", :protocol => protocol, :address => "#{@host}:#{@port}", :exception => e, :backtrace => e.backtrace)
-      @metric_errors.increment(:listener_exception)
+      @metric_errors.increment(:listener)
       Stud.stoppable_sleep(5) { stop? }
       retry
     end
@@ -254,7 +254,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       event.set("priority", 13)
       event.set("severity", 5)   # 13 & 7 == 5
       event.set("facility", 1)   # 13 >> 3 == 1
-      metric.increment(:unkown_messages)
+      metric.increment(:unknown_messages)
     end
 
     # Apply severity and facility metadata if
