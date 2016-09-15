@@ -247,7 +247,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
       @date_filter.filter(event)
     else
-      @logger.info? && @logger.info("NOT SYSLOG", :message => event.get("message"))
+      @logger.debug? && @logger.debug("NOT SYSLOG", :message => event.get("message"))
 
       # RFC3164 says unknown messages get pri=13
       priority = 13

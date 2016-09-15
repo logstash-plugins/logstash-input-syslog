@@ -1,3 +1,6 @@
+## 3.1.1
+  - Move one log message from info to debug to avoid noise
+
 ## 3.1.0
   - Add metrics for events, messages received, errors and connections attemps happening during execution time.
 
