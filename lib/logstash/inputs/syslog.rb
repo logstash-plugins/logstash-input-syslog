@@ -36,6 +36,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # ports) may require root to use.
   config :port, :validate => :number, :default => 514
 
+  # Proxy protocol support, only v1 is supported at this time
+  # http://www.haproxy.org/download/1.5/doc/proxy-protocol.txt
+  config :proxy_protocol, :validate => :boolean, :default => false
+
   # Use label parsing for severity and facility levels.
   config :use_labels, :validate => :boolean, :default => true
 
@@ -171,11 +175,26 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # tcp server thread and all tcp connections will be closed and the listener restarted.
   def tcp_receiver(output_queue, socket)
     ip, port = socket.peeraddr[3], socket.peeraddr[1]
+    first_read = true
     @logger.info("new connection", :client => "#{ip}:#{port}")
     LogStash::Util::set_thread_name("input|syslog|tcp|#{ip}:#{port}}")
 
     socket.each do |line|
       metric.increment(:messages_received)
+      if @proxy_protocol && first_read
+        first_read = false
+        pp_info = line.split(/\s/)
+        # PROXY proto clientip proxyip clientport proxyport
+        if pp_info[0] != "PROXY"
+          @logger.error("invalid proxy protocol header label", :hdr => line)
+          raise IOError
+        else
+          # would be nice to log the proxy host and port data as well, but minimizing changes
+          ip = pp_info[2]
+          port = pp_info[3]
+          next
+        end
+      end
       decode(ip, output_queue, line)
     end
   rescue Errno::ECONNRESET

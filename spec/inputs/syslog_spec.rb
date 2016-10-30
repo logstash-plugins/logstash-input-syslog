@@ -59,6 +59,40 @@ describe LogStash::Inputs::Syslog do
     end
   end
 
+  it "should properly PROXY protocol v1" do
+    port = 5511
+    event_count = 10
+    conf = <<-CONFIG
+      input {
+        syslog {
+          type => "blah"
+          port => #{port}
+          proxy_protocol => true
+        }
+      }
+    CONFIG
+
+    events = input(conf) do |pipeline, queue|
+      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+      socket.puts("PROXY TCP4 1.2.3.4 5.6.7.8 1234 5678\r");
+      socket.flush
+      event_count.times do |i|
+        socket.puts(SYSLOG_LINE)
+      end
+      socket.close
+
+      event_count.times.collect { queue.pop }
+    end
+
+    insist { events.length } == event_count
+    events.each do |event|
+      insist { event.get("priority") } == 164
+      insist { event.get("severity") } == 4
+      insist { event.get("facility") } == 20
+      insist { event.get("host") } == "1.2.3.4"
+    end
+  end
+
   it "should add unique tag when grok parsing fails with live syslog input" do
     port = 5511
     event_count = 10
