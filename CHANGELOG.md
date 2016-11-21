@@ -1,3 +1,6 @@
+## 3.2.0
+  - Add support for proxy protocol.
+
 ## 3.1.1
   - Move one log message from info to debug to avoid noise
 
