@@ -121,6 +121,35 @@ describe LogStash::Inputs::Syslog do
     end
   end
 
+  it "should not add tag when user has not specified it and parsing fails" do
+    port = 5511
+    event_count = 10
+    conf = <<-CONFIG
+      input {
+        syslog {
+          type => "blah"
+          port => #{port}
+          tag_on_parse_failure => false
+        }
+      }
+    CONFIG
+
+    events = input(conf) do |pipeline, queue|
+      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+      event_count.times do |i|
+        socket.puts("message which causes the a grok parse failure")
+      end
+      socket.close
+
+      event_count.times.collect { queue.pop }
+    end
+
+    insist { events.length } == event_count
+    event_count.times do |i|
+      insist { events[i].get("tags") } == nil
+    end
+  end
+
   it "should properly handle locale and timezone" do
     port = 5511
     event_count = 10

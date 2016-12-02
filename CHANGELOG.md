@@ -1,3 +1,7 @@
+## 3.3.0
+  - Add config option to disable tagging parse failures. Default is to always tag on non-complaint 
+    syslog data.
+
 ## 3.2.0
   - Add support for proxy protocol.
 
