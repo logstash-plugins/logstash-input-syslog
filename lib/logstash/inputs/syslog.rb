@@ -141,7 +141,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @udp.bind(@host, @port)
 
     while !stop?
-      payload, client = @udp.recvfrom(9000)
+      payload, client = @udp.recvfrom(65507)
       metric.increment(:messages_received)
       decode(client[3], output_queue, payload)
     end
