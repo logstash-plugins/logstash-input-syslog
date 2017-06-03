@@ -66,6 +66,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # weekday names (pattern with EEE).
   #
   config :locale, :validate => :string
+  # If the input is not RFC 5424 compliant, the default behavior is to create a tag which notifies 
+  # user this happened. This option exists to supress creating the tag when a user knows they are 
+  # already sending non compliant syslog data.
+  config :tag_on_parse_failure, :validate => :boolean, :default => true
 
   public
   def initialize(params)
@@ -80,7 +84,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @grok_filter = LogStash::Filters::Grok.new(
       "overwrite" => "message",
       "match" => { "message" => "<%{POSINT:priority}>%{SYSLOGLINE}" },
-      "tag_on_failure" => ["_grokparsefailure_sysloginput"],
+      "tag_on_failure" => (tag_on_parse_failure ? "_grokparsefailure_sysloginput" : [])
     )
 
     @date_filter = LogStash::Filters::Date.new(
