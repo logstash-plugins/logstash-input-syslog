@@ -1,3 +1,6 @@
+## 3.2.2
+  - Fix some documentation issues
+
 ## 3.2.0
   - Add support for proxy protocol.
 
