@@ -197,7 +197,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       end
       decode(ip, output_queue, line)
     end
-  rescue Errno::ECONNRESET
+  rescue Errno::ECONNRESET,Errno::EBADF
     # swallow connection reset exceptions to avoid bubling up the tcp_listener & server
   ensure
     @tcp_sockets.delete(socket)
