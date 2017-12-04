@@ -199,6 +199,14 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     end
   rescue Errno::ECONNRESET
     # swallow connection reset exceptions to avoid bubling up the tcp_listener & server
+    logger.info("connection reset", :client => "#{ip}:#{port}")
+  rescue Errno::EBADF
+    # swallow connection closed exceptions to avoid bubling up the tcp_listener & server
+    logger.info("connection closed", :client => "#{ip}:#{port}")
+  rescue IOError => ioerror
+    # swallow connection closed exceptions to avoid bubling up the tcp_listener & server
+    raise unless socket.closed? && ioerror.message.include?("closed")
+    logger.info("connection error: #{ioerror.message}")
   ensure
     @tcp_sockets.delete(socket)
     socket.close rescue log_and_squash
