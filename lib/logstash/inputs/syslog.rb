@@ -201,7 +201,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     # swallow connection reset exceptions to avoid bubling up the tcp_listener & server
   ensure
     @tcp_sockets.delete(socket)
-    socket.close rescue nil
+    socket.close rescue log_and_squash
   end
 
   private
@@ -228,19 +228,36 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   private
   def close_udp
     if @udp
-      @udp.close_read rescue nil
-      @udp.close_write rescue nil
+      @udp.close_read rescue log_and_squash
+      @udp.close_write rescue log_and_squash
     end
     @udp = nil
   end
 
   private
+
+  # Helper for inline rescues, which logs the squashed exception at "TRACE" level
+  # and returns nil.
+  #
+  # Instead of:
+  # ~~~ ruby
+  #.  foo rescue nil
+  # ~~~
+  # Do:
+  # ~~~ ruby
+  #.  foo rescue log_and_squash
+  # ~~~
+  def log_and_squash
+    $! && logger.trace("SQUASHED EXCEPTION: `#{$!.message}` at (`#{caller.first}`)")
+    nil
+  end
+
   def close_tcp
     # If we somehow have this left open, close it.
     @tcp_sockets.each do |socket|
-      socket.close rescue nil
+      socket.close rescue log_and_squash
     end
-    @tcp.close if @tcp rescue nil
+    @tcp.close if @tcp rescue log_and_squash
     @tcp = nil
   end
 
