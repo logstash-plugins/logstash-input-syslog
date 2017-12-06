@@ -1,3 +1,6 @@
+## 3.2.4
+  - Fix issue where stopping a pipeline (e.g., while reloading configuration) with active inbound syslog connections could cause Logstash to crash
+
 ## 3.2.3
   - Update gemspec summary
 
