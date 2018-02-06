@@ -210,4 +210,42 @@ describe LogStash::Inputs::Syslog do
   it_behaves_like 'an interruptible input plugin' do
     let(:config) { { "port" => 5511 } }
   end
+
+  it "should properly handle a custom grok_pattern" do
+    port = 5511
+    event_count = 1
+    custom_grok = "<%{POSINT:priority}>%{SYSLOGTIMESTAMP:timestamp} atypical %{GREEDYDATA:message}"
+    message_field = "This part constitutes the message field"
+    timestamp = "Oct 26 15:19:25"
+    custom_line = "<164>#{timestamp} atypical #{message_field}"
+
+    conf = <<-CONFIG
+      input {
+        syslog {
+          type => "blah"
+          port => #{port}
+          grok_pattern => "#{custom_grok}"
+        }
+      }
+    CONFIG
+
+    events = input(conf) do |pipeline, queue|
+      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+      event_count.times do |i|
+        socket.puts(custom_line)
+      end
+      socket.close
+
+      event_count.times.collect { queue.pop }
+    end
+
+    insist { events.length } == event_count
+    events.each do |event|
+      insist { event.get("priority")  } == 164
+      insist { event.get("severity")  } == 4
+      insist { event.get("facility")  } == 20
+      insist { event.get("message")   } == "#{message_field}\n"
+      insist { event.get("timestamp") } == timestamp
+    end
+  end
 end

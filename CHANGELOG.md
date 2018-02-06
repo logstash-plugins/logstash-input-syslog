@@ -1,3 +1,6 @@
+## 3.3.0
+  - Make the grok pattern a configurable option
+
 ## 3.2.4
   - Fix issue where stopping a pipeline (e.g., while reloading configuration) with active inbound syslog connections could cause Logstash to crash
 

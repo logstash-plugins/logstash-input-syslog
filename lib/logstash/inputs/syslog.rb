@@ -36,6 +36,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # ports) may require root to use.
   config :port, :validate => :number, :default => 514
 
+  # Set custom grok pattern to parse the syslog, in case the format differs
+  # from the defined standard.  This is common in security and other appliances
+  config :grok_pattern, :validate => :string, :default => "<%{POSINT:priority}>%{SYSLOGLINE}"
+
   # Proxy protocol support, only v1 is supported at this time
   # http://www.haproxy.org/download/1.5/doc/proxy-protocol.txt
   config :proxy_protocol, :validate => :boolean, :default => false
@@ -79,12 +83,12 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     require "thread_safe"
     @grok_filter = LogStash::Filters::Grok.new(
       "overwrite" => "message",
-      "match" => { "message" => "<%{POSINT:priority}>%{SYSLOGLINE}" },
+      "match" => { "message" => @grok_pattern },
       "tag_on_failure" => ["_grokparsefailure_sysloginput"],
     )
 
     @date_filter = LogStash::Filters::Date.new(
-      "match" => [ "timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss", "ISO8601"],
+      "match" => [ "timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "ISO8601"],
       "locale" => @locale,
       "timezone" => @timezone,
     )
