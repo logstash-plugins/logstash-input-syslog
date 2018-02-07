@@ -22,6 +22,7 @@ module LogStash::Environment
 end
 
 require "logstash/inputs/syslog"
+require "logstash/codecs/cef"
 require "logstash/event"
 require "stud/try"
 require "socket"
@@ -245,6 +246,45 @@ describe LogStash::Inputs::Syslog do
       insist { event.get("severity")  } == 4
       insist { event.get("facility")  } == 20
       insist { event.get("message")   } == "#{message_field}\n"
+      insist { event.get("timestamp") } == timestamp
+    end
+  end
+
+  it "should properly handle the cef codec with a custom grok_pattern" do
+    port = 5511
+    event_count = 1
+    custom_grok = "<%{POSINT:priority}>%{TIMESTAMP_ISO8601:timestamp} atypical"
+    message_field = "Description Omitted"
+    timestamp = "2018-02-07T12:40:00.000Z"
+    custom_line = "<134>#{timestamp} atypical CEF:0|Company Name|Application Name|Application Version Number|632|Syslog Configuration Updated|3|src=192.168.0.1 suser=user@example.com target=TARGET msg=#{message_field} KeyValueOne=kv1 KeyValueTwo=12345 "
+
+    conf = <<-CONFIG
+      input {
+        syslog {
+          port => #{port}
+          syslog_field => "syslog"
+          grok_pattern => "#{custom_grok}"
+          codec => cef
+        }
+      }
+    CONFIG
+
+    events = input(conf) do |pipeline, queue|
+      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+      event_count.times do |i|
+        socket.puts(custom_line)
+      end
+      socket.close
+
+      event_count.times.collect { queue.pop }
+    end
+
+    insist { events.length } == event_count
+    events.each do |event|
+      insist { event.get("priority")  } == 134
+      insist { event.get("severity")  } == 6
+      insist { event.get("facility")  } == 16
+      insist { event.get("message")   } == message_field
       insist { event.get("timestamp") } == timestamp
     end
   end

@@ -36,6 +36,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # ports) may require root to use.
   config :port, :validate => :number, :default => 514
 
+  # Use custom post-codec processing field (e.g. syslog, after cef codec
+  # processing) instead of the default `message` field
+  config :syslog_field, :validate => :string, :default => "message"
+
   # Set custom grok pattern to parse the syslog, in case the format differs
   # from the defined standard.  This is common in security and other appliances
   config :grok_pattern, :validate => :string, :default => "<%{POSINT:priority}>%{SYSLOGLINE}"
@@ -82,8 +86,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @metric_errors = metric.namespace(:errors)
     require "thread_safe"
     @grok_filter = LogStash::Filters::Grok.new(
-      "overwrite" => "message",
-      "match" => { "message" => @grok_pattern },
+      "overwrite" => @syslog_field,
+      "match" => { @syslog_field => @grok_pattern },
       "tag_on_failure" => ["_grokparsefailure_sysloginput"],
     )
 
