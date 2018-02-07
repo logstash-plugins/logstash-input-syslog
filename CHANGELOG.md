@@ -1,3 +1,7 @@
+## 3.4.0
+  - Allow the syslog field to be a configurable option.  This is useful for when codecs change
+    the field containing the syslog data (e.g. the CEF codec).
+
 ## 3.3.0
   - Make the grok pattern a configurable option
 

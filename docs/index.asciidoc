@@ -53,6 +53,7 @@ This plugin supports the following configuration options plus the <<plugins-{typ
 | <<plugins-{type}s-{plugin}-port>> |<<number,number>>|No
 | <<plugins-{type}s-{plugin}-proxy_protocol>> |<<boolean,boolean>>|No
 | <<plugins-{type}s-{plugin}-severity_labels>> |<<array,array>>|No
+| <<plugins-{type}s-{plugin}-syslog_field>> |<<string,string>>|No
 | <<plugins-{type}s-{plugin}-timezone>> |<<string,string>>|No
 | <<plugins-{type}s-{plugin}-use_labels>> |<<boolean,boolean>>|No
 |=======================================================================
@@ -135,6 +136,29 @@ http://www.haproxy.org/download/1.5/doc/proxy-protocol.txt
   * Default value is `["Emergency", "Alert", "Critical", "Error", "Warning", "Notice", "Informational", "Debug"]`
 
 Labels for severity levels. These are defined in RFC3164.
+
+[id="plugins-{type}s-{plugin}-syslog_field"]
+===== `syslog_field`
+
+  * Value type is <<string,string>>
+  * Default value is `"message"`
+
+Codecs process the data before the rest of the data is parsed. Some codecs,
+like CEF, put the syslog data into another field after pre-processing the
+data.  Use this option in conjunction with the `grok_pattern` configuration
+to allow the syslog input plugin to fully parse the syslog data in this case.
+
+[source,sh]
+-------
+input {
+  syslog {
+    port => 12345
+    codec => cef
+    syslog_field => "syslog"
+    grok_pattern => "<%{POSINT:priority}>%{SYSLOGTIMESTAMP:timestamp} CUSTOM GROK HERE"
+  }
+}
+-------
 
 [id="plugins-{type}s-{plugin}-timezone"]
 ===== `timezone`
