@@ -1,3 +1,6 @@
+## 3.4.1
+  - Docs: Set the default_codec doc attribute.
+
 ## 3.4.0
   - Allow the syslog field to be a configurable option.  This is useful for when codecs change
     the field containing the syslog data (e.g. the CEF codec).
