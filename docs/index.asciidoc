@@ -52,6 +52,8 @@ This plugin supports the following configuration options plus the <<plugins-{typ
 | <<plugins-{type}s-{plugin}-host>> |<<string,string>>|No
 | <<plugins-{type}s-{plugin}-locale>> |<<string,string>>|No
 | <<plugins-{type}s-{plugin}-port>> |<<number,number>>|No
+| <<plugins-{type}s-{plugin}-tcp_receive_buffer_bytes>> |<<number,number>>|No
+| <<plugins-{type}s-{plugin}-udp_receive_buffer_bytes>> |<<number,number>>|No
 | <<plugins-{type}s-{plugin}-proxy_protocol>> |<<boolean,boolean>>|No
 | <<plugins-{type}s-{plugin}-severity_labels>> |<<array,array>>|No
 | <<plugins-{type}s-{plugin}-syslog_field>> |<<string,string>>|No
@@ -122,6 +124,31 @@ The port to listen on. Remember that ports less than 1024 (privileged
 ports) may require root to use.
 
 [id="plugins-{type}s-{plugin}-proxy_protocol"]
+
+===== `tcp_receive_buffer_bytes`
+
+  * Value type is <<number,number>>
+  * There is no default value for this setting
+
+The TCP socket receive buffer size in bytes.
+If option is not set, the operating system default is used.
+The operating system will use the max allowed value if `tcp_receive_buffer_bytes` is larger than allowed.
+Consult your operating system documentation if you need to increase this max allowed value.
+
+[id="plugins-{type}s-{plugin}-tcp_receive_buffer_bytes"]
+
+===== `udp_receive_buffer_bytes`
+
+  * Value type is <<number,number>>
+  * There is no default value for this setting
+
+The UDP socket receive buffer size in bytes.
+If option is not set, the operating system default is used.
+The operating system will use the max allowed value if `udp_receive_buffer_bytes` is larger than allowed.
+Consult your operating system documentation if you need to increase this max allowed value.
+
+[id="plugins-{type}s-{plugin}-udp_receive_buffer_bytes"]
+
 ===== `proxy_protocol`
 
   * Value type is <<boolean,boolean>>

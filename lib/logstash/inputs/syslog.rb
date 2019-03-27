@@ -75,6 +75,18 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   #
   config :locale, :validate => :string
 
+  # The UDP socket receive buffer size in bytes.
+  # If option is not set, the operating system default is used.
+  # The operating system will use the max allowed value if receive_buffer_bytes is larger than allowed.
+  # Consult your operating system documentation if you need to increase this max allowed value.
+  config :udp_receive_buffer_bytes, :validate => :number
+
+  # The TCP socket receive buffer size in bytes.
+  # If option is not set, the operating system default is used.
+  # The operating system will use the max allowed value if receive_buffer_bytes is larger than allowed.
+  # Consult your operating system documentation if you need to increase this max allowed value.
+  config :tcp_receive_buffer_bytes, :validate => :number
+
   public
   def initialize(params)
     super
@@ -146,6 +158,13 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     @udp.close if @udp
     @udp = UDPSocket.new(Socket::AF_INET)
+    if @udp_receive_buffer_bytes
+      @udp.setsockopt(Socket::SOL_SOCKET, Socket::SO_RCVBUF, @udp_receive_buffer_bytes)
+      rcvbuf = @udp.getsockopt(Socket::SOL_SOCKET, Socket::SO_RCVBUF).unpack("i")[0]
+      if rcvbuf != @udp_receive_buffer_bytes
+        @logger.warn("Unable to set udp_receive_buffer_bytes to desired size. Requested #{@udp_receive_buffer_bytes} but obtained #{rcvbuf} bytes.")
+      end
+    end
     @udp.bind(@host, @port)
 
     while !stop?
@@ -168,6 +187,13 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     while !stop?
       socket = @tcp.accept
+      if @tcp_receive_buffer_bytes
+        socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_RCVBUF, @tcp_receive_buffer_bytes)
+        rcvbuf = socket.getsockopt(Socket::SOL_SOCKET, Socket::SO_RCVBUF).unpack("i")[0]
+        if rcvbuf != @tcp_receive_buffer_bytes
+          @logger.warn("Unable to set tcp_receive_buffer_bytes to desired size. Requested #{@tcp_receive_buffer_bytes} but obtained #{rcvbuf} bytes.")
+        end
+      end
       @tcp_sockets << socket
       metric.increment(:connections)
 
@@ -179,7 +205,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     close_tcp
   end # def tcp_listener
 
-  # tcp_receiver is executed in a thread, any uncatched exception will be bubbled up to the
+  # tcp_receiver is executed in a thread, any uncaught exception will be bubbled up to the
   # tcp server thread and all tcp connections will be closed and the listener restarted.
   def tcp_receiver(output_queue, socket)
     ip, port = socket.peeraddr[3], socket.peeraddr[1]
