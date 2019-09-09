@@ -145,7 +145,11 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @logger.info("Starting syslog udp listener", :address => "#{@host}:#{@port}")
 
     @udp.close if @udp
-    @udp = UDPSocket.new(Socket::AF_INET)
+    if @host.include? ':'
+      @udp = UDPSocket.new(Socket::AF_INET6)
+    else
+      @udp = UDPSocket.new(Socket::AF_INET)
+    end
     @udp.bind(@host, @port)
 
     while !stop?
