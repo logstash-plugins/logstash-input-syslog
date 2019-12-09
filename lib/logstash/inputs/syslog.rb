@@ -1,7 +1,7 @@
 # encoding: utf-8
 require "date"
 require "socket"
-require "concurrent"
+require "concurrent/array"
 require "logstash/filters/grok"
 require "logstash/filters/date"
 require "logstash/inputs/base"
@@ -84,7 +84,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   public
   def register
     @metric_errors = metric.namespace(:errors)
-    require "thread_safe"
+
     @grok_filter = LogStash::Filters::Grok.new(
       "overwrite" => @syslog_field,
       "match" => { @syslog_field => @grok_pattern },
@@ -100,7 +100,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @grok_filter.register
     @date_filter.register
 
-    @tcp_sockets = ThreadSafe::Array.new
+    @tcp_sockets = Concurrent::Array.new
     @tcp = @udp = nil
   end # def register
 
