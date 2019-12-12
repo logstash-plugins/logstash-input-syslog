@@ -1,5 +1,6 @@
 ## Unreleased
   - Remove (deprecated) dependency on thread_safe gem.
+  - CI: upgrade testing [#58](https://github.com/logstash-plugins/logstash-input-syslog/pull/58)
 
 ## 3.4.1
   - Docs: Set the default_codec doc attribute.
