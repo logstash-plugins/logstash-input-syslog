@@ -55,11 +55,11 @@ describe LogStash::Inputs::Syslog do
       event_count.times.collect { queue.pop }
     end
 
-    insist { events.length } == event_count
+    expect( events.length ).to eql event_count
     events.each do |event|
-      insist { event.get("priority") } == 164
-      insist { event.get("severity") } == 4
-      insist { event.get("facility") } == 20
+      expect( event.get("priority") ).to eql 164
+      expect( event.get("severity") ).to eql 4
+      expect( event.get("facility") ).to eql 20
     end
   end
 
@@ -89,12 +89,12 @@ describe LogStash::Inputs::Syslog do
       event_count.times.collect { queue.pop }
     end
 
-    insist { events.length } == event_count
+    expect( events.length ).to eql event_count
     events.each do |event|
-      insist { event.get("priority") } == 164
-      insist { event.get("severity") } == 4
-      insist { event.get("facility") } == 20
-      insist { event.get("host") } == "1.2.3.4"
+      expect( event.get("priority") ).to eql 164
+      expect( event.get("severity") ).to eql 4
+      expect( event.get("facility") ).to eql 20
+      expect( event.get("host") ).to eql "1.2.3.4"
     end
   end
 
@@ -121,9 +121,9 @@ describe LogStash::Inputs::Syslog do
       event_count.times.collect { queue.pop }
     end
 
-    insist { events.length } == event_count
+    expect( events.length ).to eql event_count
     event_count.times do |i|
-      insist { events[i].get("tags") } == ["_grokparsefailure_sysloginput"]
+      expect( events[i].get("tags") ).to eql ["_grokparsefailure_sysloginput"]
     end
   end
 
@@ -152,9 +152,9 @@ describe LogStash::Inputs::Syslog do
       event_count.times.collect { queue.pop }
     end
 
-    insist { events.length } == event_count
+    expect( events.length ).to eql event_count
     events.each do |event|
-      insist { event.get("@timestamp").to_iso8601 } == "#{Time.now.year}-10-26T15:19:25.000Z"
+      expect( event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T15:19:25.000Z"
     end
   end
 
@@ -179,7 +179,7 @@ describe LogStash::Inputs::Syslog do
     end
 
     # chances platform timezone is not UTC so ignore the hours
-    insist { event.get("@timestamp").to_iso8601 } =~ /#{Time.now.year}-10-26T\d\d:19:25.000Z/
+    expect( event.get("@timestamp").to_iso8601 ).to match /#{Time.now.year}-10-26T\d\d:19:25.000Z/
   end
 
   it "should support non UTC timezone" do
@@ -190,7 +190,7 @@ describe LogStash::Inputs::Syslog do
 
     syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
     input.syslog_relay(syslog_event)
-    insist { syslog_event.get("@timestamp").to_iso8601 } == "#{Time.now.year}-10-26T20:19:25.000Z"
+    expect( syslog_event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T20:19:25.000Z"
 
     input.close
   end
@@ -202,13 +202,13 @@ describe LogStash::Inputs::Syslog do
     # event which is not syslog should have a new tag
     event = LogStash::Event.new({ "message" => "hello world, this is not syslog RFC3164" })
     input.syslog_relay(event)
-    insist { event.get("tags") } ==  ["_grokparsefailure_sysloginput"]
+    expect( event.get("tags") ).to eql  ["_grokparsefailure_sysloginput"]
 
     syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
     input.syslog_relay(syslog_event)
-    insist { syslog_event.get("priority") } ==  164
-    insist { syslog_event.get("severity") } ==  4
-    insist { syslog_event.get("tags") } ==  nil
+    expect( syslog_event.get("priority") ).to eql 164
+    expect( syslog_event.get("severity") ).to eql 4
+    expect( syslog_event.get("tags") ).to be nil
 
     input.close
   end
@@ -245,13 +245,13 @@ describe LogStash::Inputs::Syslog do
       event_count.times.collect { queue.pop }
     end
 
-    insist { events.length } == event_count
+    expect( events.length ).to eql event_count
     events.each do |event|
-      insist { event.get("priority")  } == 164
-      insist { event.get("severity")  } == 4
-      insist { event.get("facility")  } == 20
-      insist { event.get("message")   } == "#{message_field}\n"
-      insist { event.get("timestamp") } == timestamp
+      expect( event.get("priority") ).to eql 164
+      expect( event.get("severity") ).to eql 4
+      expect( event.get("facility") ).to eql 20
+      expect( event.get("message") ).to eql "#{message_field}\n"
+      expect( event.get("timestamp") ).to eql timestamp
     end
   end
 
@@ -284,13 +284,13 @@ describe LogStash::Inputs::Syslog do
       event_count.times.collect { queue.pop }
     end
 
-    insist { events.length } == event_count
+    expect( events.length ).to eql event_count
     events.each do |event|
-      insist { event.get("priority")  } == 134
-      insist { event.get("severity")  } == 6
-      insist { event.get("facility")  } == 16
-      insist { event.get("message")   } == message_field
-      insist { event.get("timestamp") } == timestamp
+      expect( event.get("priority") ).to eql 134
+      expect( event.get("severity") ).to eql 6
+      expect( event.get("facility") ).to eql 16
+      expect( event.get("message") ).to eql message_field
+      expect( event.get("timestamp") ).to eql timestamp
     end
   end
 end
