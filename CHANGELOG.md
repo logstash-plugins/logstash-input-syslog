@@ -1,6 +1,7 @@
-## Unreleased
+## 3.4.2
   - Remove (deprecated) dependency on thread_safe gem.
   - CI: upgrade testing [#58](https://github.com/logstash-plugins/logstash-input-syslog/pull/58)
+  - [DOC] Correct example for `timezone` option [#53](https://github.com/logstash-plugins/logstash-input-syslog/pull/53)
 
 ## 3.4.1
   - Docs: Set the default_codec doc attribute.
