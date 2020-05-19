@@ -1,3 +1,6 @@
+## 3.4.3
+  - [DOC] Added expanded descriptions and requirements for facility_labels and severity_labels. [#52](https://github.com/logstash-plugins/logstash-input-syslog/pull/52)
+
 ## 3.4.2
   - Remove (deprecated) dependency on thread_safe gem.
   - CI: upgrade testing [#58](https://github.com/logstash-plugins/logstash-input-syslog/pull/58)
