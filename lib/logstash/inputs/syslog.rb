@@ -59,8 +59,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
   # Specify a time zone canonical ID to be used for date parsing.
   # The valid IDs are listed on the [Joda.org available time zones page](http://joda-time.sourceforge.net/timezones.html).
-  # This is useful in case the time zone cannot be extracted from the value,
-  # and is not the platform default.
+  # This is useful in case the time zone cannot be extracted from the value, and is not the platform default.
   # If this is not specified the platform default will be used.
   # Canonical ID is good as it takes care of daylight saving time for you
   # For example, `America/Los_Angeles` or `Europe/France` are valid IDs.
@@ -217,7 +216,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     logger.info("connection error: #{ioerror.message}")
   ensure
     @tcp_sockets.delete(socket)
-    socket.close rescue log_and_squash
+    socket.close rescue log_and_squash(:close_tcp_receiver_socket)
   end
 
   private
@@ -244,16 +243,15 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   private
   def close_udp
     if @udp
-      @udp.close_read rescue log_and_squash
-      @udp.close_write rescue log_and_squash
+      @udp.close_read rescue log_and_squash(:close_udp_read)
+      @udp.close_write rescue log_and_squash(:close_udp_write)
     end
     @udp = nil
   end
 
   private
 
-  # Helper for inline rescues, which logs the squashed exception at "TRACE" level
-  # and returns nil.
+  # Helper for inline rescues, which logs the exception at "DEBUG" level and returns nil.
   #
   # Instead of:
   # ~~~ ruby
@@ -261,19 +259,19 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # ~~~
   # Do:
   # ~~~ ruby
-  #.  foo rescue log_and_squash
+  #.  foo rescue log_and_squash(:foo)
   # ~~~
-  def log_and_squash
-    $! && logger.trace("SQUASHED EXCEPTION: `#{$!.message}` at (`#{caller.first}`)")
+  def log_and_squash(label)
+    $! && logger.debug("#{label} failed:", :exception => $!.class, :message => $!.message)
     nil
   end
 
   def close_tcp
     # If we somehow have this left open, close it.
     @tcp_sockets.each do |socket|
-      socket.close rescue log_and_squash
+      socket.close rescue log_and_squash(:close_tcp_socket)
     end
-    @tcp.close if @tcp rescue log_and_squash
+    @tcp.close if @tcp rescue log_and_squash(:close_tcp)
     @tcp = nil
   end
 
