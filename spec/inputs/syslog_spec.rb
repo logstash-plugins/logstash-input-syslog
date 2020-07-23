@@ -1,6 +1,5 @@
 # encoding: utf-8
 require "logstash/devutils/rspec/spec_helper"
-require "insist"
 require "logstash/devutils/rspec/shared_examples"
 
 # running the grok code outside a logstash package means
