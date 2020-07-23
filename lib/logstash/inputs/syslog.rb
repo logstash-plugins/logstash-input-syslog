@@ -240,10 +240,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   rescue Errno::EBADF
     # swallow connection closed exceptions to avoid bubling up the tcp_listener & server
     logger.info("connection closed", :client => "#{ip}:#{port}")
-  rescue IOError => ioerror
+  rescue IOError => e
     # swallow connection closed exceptions to avoid bubling up the tcp_listener & server
-    raise unless socket.closed? && ioerror.message.include?("closed")
-    logger.info("connection error: #{ioerror.message}")
+    raise(e) unless socket.closed? && e.message.to_s.include?("closed")
+    logger.info("connection error:", :exception => e.class, :message => e.message)
   ensure
     @tcp_sockets.delete(socket)
     socket.close rescue log_and_squash(:close_tcp_receiver_socket)
