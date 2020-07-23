@@ -314,10 +314,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
       # in legacy (non-ecs) mode we used to match (SYSLOGBASE2) timestamp into two fields
       event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
-      if event.include?("timestamp")
-        @date_filter.filter(event)
-        event.remove 'timestamp' if ecs_compatibility_enabled?
-      end
+      @date_filter.filter(event)
+      event.remove 'timestamp' if ecs_compatibility_enabled?
     else
       @logger.debug? && @logger.debug("un-matched syslog message", :message => event.get("message"))
 
