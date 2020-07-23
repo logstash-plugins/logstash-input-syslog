@@ -88,6 +88,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       @facility_label_key = '[log][syslog][facility][name]'.freeze
       @severity_label_key = '[log][syslog][severity][name]'.freeze
 
+      @source_key = '[source][ip]'.freeze
+
       @grok_pattern ||= "<%{POSINT:#{@priority_key}:int}>%{SYSLOGLINE}"
     else
       @priority_key = 'priority'.freeze
@@ -96,6 +98,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
       @facility_label_key = 'facility_label'.freeze
       @severity_label_key = 'severity_label'.freeze
+
+      @source_key = 'host'.freeze
 
       @grok_pattern ||= "<%{POSINT:#{@priority_key}}>%{SYSLOGLINE}"
     end
@@ -248,7 +252,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   def decode(host, output_queue, data)
     @codec.decode(data) do |event|
       decorate(event)
-      event.set("host", host)
+      event.set(@source_key, host) # do we also want to capture source.port ?
       syslog_relay(event)
       output_queue << event
       metric.increment(:events)
@@ -304,6 +308,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # treat it like the whole event["message"] is correct and try to fill
   # the missing pieces (host, priority, etc)
   def syslog_relay(event)
+    event.set('[event][original]', event.get('message')) if ecs_compatibility_enabled?
     @grok_filter.filter(event)
 
     if event.get("tags").nil? || !event.get("tags").include?(@grok_filter.tag_on_failure)
