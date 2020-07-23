@@ -59,8 +59,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
   # Specify a time zone canonical ID to be used for date parsing.
   # The valid IDs are listed on the [Joda.org available time zones page](http://joda-time.sourceforge.net/timezones.html).
-  # This is useful in case the time zone cannot be extracted from the value,
-  # and is not the platform default.
+  # This is useful in case the time zone cannot be extracted from the value, and is not the platform default.
   # If this is not specified the platform default will be used.
   # Canonical ID is good as it takes care of daylight saving time for you
   # For example, `America/Los_Angeles` or `Europe/France` are valid IDs.
@@ -74,12 +73,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # weekday names (pattern with EEE).
   #
   config :locale, :validate => :string
-
-  public
-  def initialize(params)
-    super
-    BasicSocket.do_not_reverse_lookup = true
-  end # def initialize
 
   public
   def register
@@ -146,6 +139,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     @udp.close if @udp
     @udp = UDPSocket.new(Socket::AF_INET)
+    @udp.do_not_reverse_lookup = true
     @udp.bind(@host, @port)
 
     while !stop?
@@ -165,6 +159,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   def tcp_listener(output_queue)
     @logger.info("Starting syslog tcp listener", :address => "#{@host}:#{@port}")
     @tcp = TCPServer.new(@host, @port)
+    @tcp.do_not_reverse_lookup = true
 
     while !stop?
       socket = @tcp.accept
@@ -217,7 +212,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     logger.info("connection error: #{ioerror.message}")
   ensure
     @tcp_sockets.delete(socket)
-    socket.close rescue log_and_squash
+    socket.close rescue log_and_squash(:close_tcp_receiver_socket)
   end
 
   private
@@ -231,7 +226,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     end
   rescue => e
     # swallow and log all decoding exceptions, these will never be socket related
-    @logger.error("Error decoding data", :data => data.inspect, :exception => e, :backtrace => e.backtrace)
+    @logger.error("Error decoding data", :data => data.inspect, :exception => e.class, :message => e.message, :backtrace => e.backtrace)
     @metric_errors.increment(:decoding)
   end
 
@@ -244,16 +239,15 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   private
   def close_udp
     if @udp
-      @udp.close_read rescue log_and_squash
-      @udp.close_write rescue log_and_squash
+      @udp.close_read rescue log_and_squash(:close_udp_read)
+      @udp.close_write rescue log_and_squash(:close_udp_write)
     end
     @udp = nil
   end
 
   private
 
-  # Helper for inline rescues, which logs the squashed exception at "TRACE" level
-  # and returns nil.
+  # Helper for inline rescues, which logs the exception at "DEBUG" level and returns nil.
   #
   # Instead of:
   # ~~~ ruby
@@ -261,19 +255,19 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # ~~~
   # Do:
   # ~~~ ruby
-  #.  foo rescue log_and_squash
+  #.  foo rescue log_and_squash(:foo)
   # ~~~
-  def log_and_squash
-    $! && logger.trace("SQUASHED EXCEPTION: `#{$!.message}` at (`#{caller.first}`)")
+  def log_and_squash(label)
+    $! && logger.debug("#{label} failed:", :exception => $!.class, :message => $!.message)
     nil
   end
 
   def close_tcp
     # If we somehow have this left open, close it.
     @tcp_sockets.each do |socket|
-      socket.close rescue log_and_squash
+      socket.close rescue log_and_squash(:close_tcp_socket)
     end
-    @tcp.close if @tcp rescue log_and_squash
+    @tcp.close if @tcp rescue log_and_squash(:close_tcp)
     @tcp = nil
   end
 
