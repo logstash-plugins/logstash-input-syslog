@@ -75,12 +75,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   config :locale, :validate => :string
 
   public
-  def initialize(params)
-    super
-    BasicSocket.do_not_reverse_lookup = true
-  end # def initialize
-
-  public
   def register
     @metric_errors = metric.namespace(:errors)
 
@@ -145,6 +139,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     @udp.close if @udp
     @udp = UDPSocket.new(Socket::AF_INET)
+    @udp.do_not_reverse_lookup = true
     @udp.bind(@host, @port)
 
     while !stop?
@@ -164,6 +159,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   def tcp_listener(output_queue)
     @logger.info("Starting syslog tcp listener", :address => "#{@host}:#{@port}")
     @tcp = TCPServer.new(@host, @port)
+    @tcp.do_not_reverse_lookup = true
 
     while !stop?
       socket = @tcp.accept
