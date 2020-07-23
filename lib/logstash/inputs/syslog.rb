@@ -230,7 +230,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     end
   rescue => e
     # swallow and log all decoding exceptions, these will never be socket related
-    @logger.error("Error decoding data", :data => data.inspect, :exception => e, :backtrace => e.backtrace)
+    @logger.error("Error decoding data", :data => data.inspect, :exception => e.class, :message => e.message, :backtrace => e.backtrace)
     @metric_errors.increment(:decoding)
   end
 
