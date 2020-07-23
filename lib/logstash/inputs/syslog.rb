@@ -6,6 +6,7 @@ require "logstash/filters/grok"
 require "logstash/filters/date"
 require "logstash/inputs/base"
 require "logstash/namespace"
+require 'logstash/plugin_mixins/ecs_compatibility_support'
 require "stud/interval"
 
 # Read syslog messages as events over the network.
@@ -25,6 +26,8 @@ require "stud/interval"
 # Note: This input will start listeners on both TCP and UDP.
 #
 class LogStash::Inputs::Syslog < LogStash::Inputs::Base
+  include LogStash::PluginMixins::ECSCompatibilitySupport
+
   config_name "syslog"
 
   default :codec, "plain"
@@ -82,6 +85,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       "overwrite" => @syslog_field,
       "match" => { @syslog_field => @grok_pattern },
       "tag_on_failure" => ["_grokparsefailure_sysloginput"],
+      "ecs_compatibility" => ecs_compatibility # use ecs-compliant patterns
     )
 
     @date_filter = LogStash::Filters::Date.new(
@@ -93,11 +97,32 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @grok_filter.register
     @date_filter.register
 
+    if ecs_compatibility_enabled?
+      @priority_key = '[log][syslog][priority]'.freeze
+      @facility_key = '[log][syslog][facility][code]'.freeze
+      @severity_key = '[log][syslog][severity][code]'.freeze
+
+      @facility_label_key = '[log][syslog][facility][name]'.freeze
+      @severity_label_key = '[log][syslog][severity][name]'.freeze
+    else
+      @priority_key = 'priority'.freeze
+      @facility_key = 'facility'.freeze
+      @severity_key = 'severity'.freeze
+
+      @facility_label_key = 'facility_label'.freeze
+      @severity_label_key = 'severity_label'.freeze
+    end
+
     @tcp_sockets = Concurrent::Array.new
     @tcp = @udp = nil
   end # def register
 
-  public
+  private
+
+  def ecs_compatibility_enabled?
+    ecs_compatibility && ecs_compatibility != :disabled
+  end
+
   def run(output_queue)
     udp_thr = Thread.new(output_queue) do |output_queue|
       server(:udp, output_queue)
@@ -112,8 +137,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     udp_thr.join
     tcp_thr.join
   end # def run
+  public :run
 
-  private
   # server call the specified protocol listener and basically restarts on
   # any listener uncatched exception
   #
@@ -130,7 +155,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     end
   end
 
-  private
   # udp_listener creates the udp socket and continously read from it.
   # upon exception the socket will be closed and the exception bubbled
   # in the server which will restart the listener
@@ -151,7 +175,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     close_udp
   end # def udp_listener
 
-  private
   # tcp_listener accepts tcp connections and creates a new tcp_receiver thread
   # for each accepted socket.
   # upon exception all tcp sockets will be closed and the exception bubbled
@@ -215,7 +238,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     socket.close rescue log_and_squash(:close_tcp_receiver_socket)
   end
 
-  private
   def decode(host, output_queue, data)
     @codec.decode(data) do |event|
       decorate(event)
@@ -230,13 +252,13 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @metric_errors.increment(:decoding)
   end
 
-  public
+  # @see LogStash::Plugin#close
   def stop
     close_udp
     close_tcp
   end
+  public :stop
 
-  private
   def close_udp
     if @udp
       @udp.close_read rescue log_and_squash(:close_udp_read)
@@ -244,8 +266,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     end
     @udp = nil
   end
-
-  private
 
   # Helper for inline rescues, which logs the exception at "DEBUG" level and returns nil.
   #
@@ -276,46 +296,51 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # If the message cannot be recognized (see @grok_filter), we'll
   # treat it like the whole event["message"] is correct and try to fill
   # the missing pieces (host, priority, etc)
-  public
   def syslog_relay(event)
     @grok_filter.filter(event)
 
     if event.get("tags").nil? || !event.get("tags").include?(@grok_filter.tag_on_failure)
       # Per RFC3164, priority = (facility * 8) + severity
       #                       = (facility << 3) & (severity)
-      priority = event.get("priority").to_i rescue 13
-      severity = priority & 7   # 7 is 111 (3 bits)
-      facility = priority >> 3
-      event.set("priority", priority)
-      event.set("severity", severity)
-      event.set("facility", facility)
+      priority = event.get(@priority_key).to_i rescue 13
+      set_priority event, priority
 
+      # in legacy (non-ecs) mode we used to match (SYSLOGBASE2) timestamp into two fields
       event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
-      @date_filter.filter(event)
+      if event.include?("timestamp")
+        @date_filter.filter(event)
+        event.remove 'timestamp' if ecs_compatibility_enabled?
+      end
     else
       @logger.debug? && @logger.debug("NOT SYSLOG", :message => event.get("message"))
 
       # RFC3164 says unknown messages get pri=13
-      priority = 13
-      event.set("priority", 13)
-      event.set("severity", 5)   # 13 & 7 == 5
-      event.set("facility", 1)   # 13 >> 3 == 1
+      set_priority event, 13
       metric.increment(:unknown_messages)
     end
 
-    # Apply severity and facility metadata if
-    # use_labels => true
-    if @use_labels
-      facility_number = event.get("facility")
-      severity_number = event.get("severity")
-
-      if @facility_labels[facility_number]
-        event.set("facility_label", @facility_labels[facility_number])
-      end
-
-      if @severity_labels[severity_number]
-        event.set("severity_label", @severity_labels[severity_number])
-      end
-    end
+    # Apply severity and facility metadata if use_labels => true
+    set_labels(event) if @use_labels
   end # def syslog_relay
+  public :syslog_relay
+
+  def set_priority(event, priority)
+    severity = priority & 7 # 7 is 111 (3 bits)
+    facility = priority >> 3
+    event.set(@priority_key, priority)
+    event.set(@severity_key, severity)
+    event.set(@facility_key, facility)
+  end
+
+  def set_labels(event)
+    facility_number = event.get(@facility_key)
+    severity_number = event.get(@severity_key)
+
+    facility_label = @facility_labels[facility_number]
+    event.set(@facility_label_key, facility_label) if facility_label
+
+    severity_label = @severity_labels[severity_number]
+    event.set(@severity_label_key, severity_label) if severity_label
+  end
+
 end # class LogStash::Inputs::Syslog
