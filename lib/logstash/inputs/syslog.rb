@@ -312,7 +312,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
         event.remove 'timestamp' if ecs_compatibility_enabled?
       end
     else
-      @logger.debug? && @logger.debug("NOT SYSLOG", :message => event.get("message"))
+      @logger.debug? && @logger.debug("un-matched syslog message", :message => event.get("message"))
 
       # RFC3164 says unknown messages get pri=13
       set_priority event, 13
