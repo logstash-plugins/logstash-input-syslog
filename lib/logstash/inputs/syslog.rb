@@ -45,7 +45,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
   # Set custom grok pattern to parse the syslog, in case the format differs
   # from the defined standard.  This is common in security and other appliances
-  config :grok_pattern, :validate => :string, :default => "<%{POSINT:priority}>%{SYSLOGLINE}"
+  config :grok_pattern, :validate => :string
 
   # Proxy protocol support, only v1 is supported at this time
   # http://www.haproxy.org/download/1.5/doc/proxy-protocol.txt
@@ -77,25 +77,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   #
   config :locale, :validate => :string
 
-  public
-  def register
-    @metric_errors = metric.namespace(:errors)
-
-    @grok_filter = LogStash::Filters::Grok.new(
-      "overwrite" => @syslog_field,
-      "match" => { @syslog_field => @grok_pattern },
-      "tag_on_failure" => ["_grokparsefailure_sysloginput"],
-      "ecs_compatibility" => ecs_compatibility # use ecs-compliant patterns
-    )
-
-    @date_filter = LogStash::Filters::Date.new(
-      "match" => [ "timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "ISO8601"],
-      "locale" => @locale,
-      "timezone" => @timezone,
-    )
-
-    @grok_filter.register
-    @date_filter.register
+  def initialize(*params)
+    super
 
     if ecs_compatibility_enabled?
       @priority_key = '[log][syslog][priority]'.freeze
@@ -104,6 +87,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
       @facility_label_key = '[log][syslog][facility][name]'.freeze
       @severity_label_key = '[log][syslog][severity][name]'.freeze
+
+      @grok_pattern ||= "<%{POSINT:#{@priority_key}:int}>%{SYSLOGLINE}"
     else
       @priority_key = 'priority'.freeze
       @facility_key = 'facility'.freeze
@@ -111,7 +96,29 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
       @facility_label_key = 'facility_label'.freeze
       @severity_label_key = 'severity_label'.freeze
+
+      @grok_pattern ||= "<%{POSINT:#{@priority_key}}>%{SYSLOGLINE}"
     end
+  end
+
+  def register
+    @metric_errors = metric.namespace(:errors)
+
+    @grok_filter = LogStash::Filters::Grok.new(
+        "overwrite" => @syslog_field,
+        "match" => { @syslog_field => @grok_pattern },
+        "tag_on_failure" => ["_grokparsefailure_sysloginput"],
+        "ecs_compatibility" => ecs_compatibility # use ecs-compliant patterns
+    )
+
+    @date_filter = LogStash::Filters::Date.new(
+        "match" => [ "timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "MMM d HH:mm:ss", "ISO8601"],
+        "locale" => @locale,
+        "timezone" => @timezone,
+    )
+
+    @grok_filter.register
+    @date_filter.register
 
     @tcp_sockets = Concurrent::Array.new
     @tcp = @udp = nil
