@@ -1,3 +1,15 @@
+## 3.4.4
+  - Refactor: avoid global side-effect + cleanup [#62](https://github.com/logstash-plugins/logstash-input-syslog/pull/62)
+    * avoid setting `BasicSocket.do_not_reverse_lookup` as it has side effects for others 
+
+## 3.4.3
+  - [DOC] Added expanded descriptions and requirements for facility_labels and severity_labels. [#52](https://github.com/logstash-plugins/logstash-input-syslog/pull/52)
+
+## 3.4.2
+  - Remove (deprecated) dependency on thread_safe gem.
+  - CI: upgrade testing [#58](https://github.com/logstash-plugins/logstash-input-syslog/pull/58)
+  - [DOC] Correct example for `timezone` option [#53](https://github.com/logstash-plugins/logstash-input-syslog/pull/53)
+
 ## 3.4.1
   - Docs: Set the default_codec doc attribute.
 
