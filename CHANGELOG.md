@@ -1,3 +1,6 @@
+## 3.4.5
+  - Added support for listening on IPv6 addresses
+
 ## 3.4.4
   - Refactor: avoid global side-effect + cleanup [#62](https://github.com/logstash-plugins/logstash-input-syslog/pull/62)
     * avoid setting `BasicSocket.do_not_reverse_lookup` as it has side effects for others 

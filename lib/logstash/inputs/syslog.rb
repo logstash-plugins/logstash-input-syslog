@@ -138,7 +138,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @logger.info("Starting syslog udp listener", :address => "#{@host}:#{@port}")
 
     @udp.close if @udp
-    @udp = UDPSocket.new(Socket::AF_INET)
+    @udp = UDPSocket.new (IPAddr.new(@host).ipv6? rescue nil) ? Socket::AF_INET6 : Socket::AF_INET
     @udp.do_not_reverse_lookup = true
     @udp.bind(@host, @port)
 
