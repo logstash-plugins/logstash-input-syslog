@@ -27,7 +27,7 @@ Gem::Specification.new do |s|
   s.add_runtime_dependency 'stud', '>= 0.0.22', '< 0.1.0'
 
   s.add_runtime_dependency 'logstash-codec-plain'
-  s.add_runtime_dependency 'logstash-filter-grok'
+  s.add_runtime_dependency 'logstash-filter-grok', '>= 4.4.0'
   s.add_runtime_dependency 'logstash-filter-date'
 
   s.add_development_dependency 'logstash-devutils'
