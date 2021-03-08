@@ -104,7 +104,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @grok_filter_exec = ecs_select[
         disabled: -> (event) { @grok_filter.filter(event) },
         v1: -> (event) {
-          event.set('[event][original]', @syslog_field)
+          event.set('[event][original]', event.get(@syslog_field))
           @grok_filter.filter(event)
         }
     ]

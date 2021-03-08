@@ -217,6 +217,56 @@ describe LogStash::Inputs::Syslog do
     end
   end
 
+  context 'ECS behavior', :ecs_compatibility_support do
+
+    ecs_compatibility_matrix(:v1) do
+
+      before(:each) do
+        allow_any_instance_of(described_class).to receive(:ecs_compatibility).and_return(ecs_compatibility)
+      end
+
+      let(:event) do
+        LogStash::Event.new("message" => "<164>Oct 26 15:19:25 1.2.3.4 a sample message")
+      end
+
+      subject { LogStash::Inputs::Syslog.new }
+
+      before { subject.register }
+      after { subject.close }
+
+      it "should not have a timestamp field" do
+        subject.syslog_relay(event)
+
+        expect( event.to_hash.keys ).to_not include 'timestamp'
+      end
+
+      it "overwrites message" do
+        subject.syslog_relay(event)
+
+        expect( event.get('message') ).to eql 'a sample message'
+      end
+
+      it "keep original log message" do
+        subject.syslog_relay(event)
+
+        expect( event.get('[event][original]') ).to eql '<164>Oct 26 15:19:25 1.2.3.4 a sample message'
+      end
+
+      it "sets syslog priority and severity" do
+        subject.syslog_relay(event)
+
+        expect( event.get('log') ).to include 'syslog' => hash_including('priority' => 164)
+        expect( event.get('log') ).to include 'syslog' => hash_including('severity' => { 'code' => 4, 'name' => 'Warning' })
+      end
+
+      it "sets host-name" do
+        subject.syslog_relay(event)
+
+        expect( event.get('host') ).to eql 'hostname' => '1.2.3.4'
+      end
+    end
+  end
+
   it "should add unique tag when grok parsing fails" do
     input = LogStash::Inputs::Syslog.new({})
     input.register
