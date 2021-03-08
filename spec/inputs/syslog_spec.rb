@@ -32,7 +32,7 @@ describe LogStash::Inputs::Syslog do
   SYSLOG_LINE = "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434 dst outside:192.168.0.1/53 by access-group \"acl_drac\" [0x0, 0x0]"
 
   it "should properly handle priority, severity and facilities" do
-    skip 'elastic/logstash#11196 known LS 7.5 issue' if ENV['ELASTIC_STACK_VERSION'] && JRUBY_VERSION.eql?('9.2.8.0')
+    skip_if_stack_known_issue
     port = 5511
     event_count = 10
     conf = <<-CONFIG
@@ -63,7 +63,7 @@ describe LogStash::Inputs::Syslog do
   end
 
   it "should properly PROXY protocol v1" do
-    skip 'elastic/logstash#11196 known LS 7.5 issue' if ENV['ELASTIC_STACK_VERSION'] && JRUBY_VERSION.eql?('9.2.8.0')
+    skip_if_stack_known_issue
     port = 5511
     event_count = 10
     conf = <<-CONFIG
@@ -98,7 +98,7 @@ describe LogStash::Inputs::Syslog do
   end
 
   it "should add unique tag when grok parsing fails with live syslog input" do
-    skip 'elastic/logstash#11196 known LS 7.5 issue' if ENV['ELASTIC_STACK_VERSION'] && JRUBY_VERSION.eql?('9.2.8.0')
+    skip_if_stack_known_issue
     port = 5511
     event_count = 10
     conf = <<-CONFIG
@@ -291,5 +291,11 @@ describe LogStash::Inputs::Syslog do
       expect( event.get("message") ).to eql message_field
       expect( event.get("timestamp") ).to eql timestamp
     end
+  end
+
+  private
+
+  def skip_if_stack_known_issue
+    skip 'elastic/logstash#11196 known LS 7.5 issue' if ENV['ELASTIC_STACK_VERSION'] && JRUBY_VERSION.eql?('9.2.8.0')
   end
 end
