@@ -70,17 +70,14 @@ input plugins.
 
   * Value type is <<string,string>>
   * Supported values are:
-    ** `disabled`: does not provide ECS-compatible templates
-    ** `v1`: provides defaults that are compatible with v1 of the Elastic Common Schema
+    ** `disabled`: does not use ECS-compatible field names (e.g. `priority` for syslog priority)
+    ** `v1`: uses fields that are compatible with Elastic Common Schema (e.g. `[log][syslog][priority]`)
   * Default value depends on which version of Logstash is running:
     ** When Logstash provides a `pipeline.ecs_compatibility` setting, its value is used as the default
     ** Otherwise, the default value is `disabled`.
 
-Controls this plugin's compatibility with the {ecs-ref}}[Elastic Common Schema (ECS)].
-The value of this setting affects the _default_ values of:
-
-* <<plugins-{type}s-{plugin}-grok_pattern>>
-
+Controls this plugin's compatibility with the
+https://www.elastic.co/guide/en/ecs/current/index.html[Elastic Common Schema (ECS)].
 
 [id="plugins-{type}s-{plugin}-facility_labels"]
 ===== `facility_labels`
