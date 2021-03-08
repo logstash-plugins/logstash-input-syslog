@@ -89,9 +89,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     @source_key = ecs_select[disabled:'host', v1:'[source][ip]']
 
-
-  def register
-    @metric_errors = metric.namespace(:errors)
+    @grok_pattern ||= ecs_select[
+        disabled:"<%{POSINT:#{@priority_key}}>%{SYSLOGLINE}",
+        v1:"<%{POSINT:#{@priority_key}:int}>%{SYSLOGLINE}"
+    ]
 
     @grok_filter = LogStash::Filters::Grok.new(
         "overwrite" => @syslog_field,
@@ -100,11 +101,31 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
         "ecs_compatibility" => ecs_compatibility # use ecs-compliant patterns
     )
 
+    @grok_filter_exec = ecs_select[
+        disabled: -> (event) { @grok_filter.filter(event) },
+        v1: -> (event) {
+          event.set('[event][original]', @syslog_field)
+          @grok_filter.filter(event)
+        }
+    ]
+
     @date_filter = LogStash::Filters::Date.new(
         "match" => [ "timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "MMM d HH:mm:ss", "ISO8601"],
         "locale" => @locale,
         "timezone" => @timezone,
     )
+
+    @date_filter_exec = ecs_select[
+        disabled: -> (event) { @date_filter.filter(event) },
+        v1: -> (event) {
+          @date_filter.filter(event)
+          event.remove('timestamp')
+        }
+    ]
+  end
+
+  def register
+    @metric_errors = metric.namespace(:errors)
 
     @grok_filter.register
     @date_filter.register
@@ -114,10 +135,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   end # def register
 
   private
-
-  def ecs_compatibility_enabled?
-    ecs_compatibility && ecs_compatibility != :disabled
-  end
 
   def run(output_queue)
     udp_thr = Thread.new(output_queue) do |output_queue|
@@ -293,8 +310,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # treat it like the whole event["message"] is correct and try to fill
   # the missing pieces (host, priority, etc)
   def syslog_relay(event)
-    event.set('[event][original]', event.get('message')) if ecs_compatibility_enabled?
-    @grok_filter.filter(event)
+    @grok_filter_exec.(event)
 
     if event.get("tags").nil? || !event.get("tags").include?(@grok_filter.tag_on_failure)
       # Per RFC3164, priority = (facility * 8) + severity
@@ -304,8 +320,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
       # in legacy (non-ecs) mode we used to match (SYSLOGBASE2) timestamp into two fields
       event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
-      @date_filter.filter(event)
-      event.remove 'timestamp' if ecs_compatibility_enabled?
+      @date_filter_exec.(event)
+
     else
       @logger.debug? && @logger.debug("un-matched syslog message", :message => event.get("message"))
 
