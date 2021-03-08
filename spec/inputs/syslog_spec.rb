@@ -2,6 +2,8 @@
 require "logstash/devutils/rspec/spec_helper"
 require "logstash/devutils/rspec/shared_examples"
 
+require 'logstash/plugin_mixins/ecs_compatibility_support/spec_helper'
+
 # running the grok code outside a logstash package means
 # LOGSTASH_HOME will not be defined, so let's set it here
 # before requiring the grok filter
@@ -97,101 +99,122 @@ describe LogStash::Inputs::Syslog do
     end
   end
 
-  it "should add unique tag when grok parsing fails with live syslog input" do
-    skip_if_stack_known_issue
-    port = 5511
-    event_count = 10
-    conf = <<-CONFIG
-      input {
-        syslog {
-          type => "blah"
-          port => #{port}
-        }
-      }
-    CONFIG
+  context 'tag', :ecs_compatibility_support do
+    ecs_compatibility_matrix(:disabled, :v1) do
 
-    events = input(conf) do |pipeline, queue|
-      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-      event_count.times do |i|
-        socket.puts("message which causes the a grok parse failure")
+      before(:each) do
+        allow_any_instance_of(described_class).to receive(:ecs_compatibility).and_return(ecs_compatibility)
       end
-      socket.close
 
-      event_count.times.collect { queue.pop }
-    end
+      it "should add unique tag when grok parsing fails with live syslog input" do
+        skip_if_stack_known_issue
+        port = 5511
+        event_count = 10
+        conf = <<-CONFIG
+          input {
+            syslog {
+              type => "blah"
+              port => #{port}
+            }
+          }
+        CONFIG
 
-    expect( events.length ).to eql event_count
-    event_count.times do |i|
-      expect( events[i].get("tags") ).to eql ["_grokparsefailure_sysloginput"]
-    end
-  end
+        events = input(conf) do |pipeline, queue|
+          socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+          event_count.times do |i|
+            socket.puts("message which causes the a grok parse failure")
+          end
+          socket.close
 
-  it "should properly handle locale and timezone" do
-    port = 5511
-    event_count = 10
+          event_count.times.collect { queue.pop }
+        end
 
-    conf = <<-CONFIG
-      input {
-        syslog {
-          type => "blah"
-          port => #{port}
-          locale => "en"
-          timezone => "UTC"
-        }
-      }
-    CONFIG
-
-    events = input(conf) do |pipeline, queue|
-      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-      event_count.times do |i|
-        socket.puts(SYSLOG_LINE)
+        expect( events.length ).to eql event_count
+        event_count.times do |i|
+          expect( events[i].get("tags") ).to eql ["_grokparsefailure_sysloginput"]
+        end
       end
-      socket.close
 
-      event_count.times.collect { queue.pop }
-    end
-
-    expect( events.length ).to eql event_count
-    events.each do |event|
-      expect( event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T15:19:25.000Z"
     end
   end
 
-  it "should properly handle no locale and no timezone" do
-    port = 5511
+  context 'timestamp', :ecs_compatibility_support do
+    ecs_compatibility_matrix(:disabled, :v1) do
 
-    conf = <<-CONFIG
-      input {
-        syslog {
-          type => "blah"
-          port => #{port}
-        }
-      }
-    CONFIG
+      before(:each) do
+        allow_any_instance_of(described_class).to receive(:ecs_compatibility).and_return(ecs_compatibility)
+      end
 
-    event = input(conf) do |pipeline, queue|
-      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-      socket.puts(SYSLOG_LINE)
-      socket.close
+      it "should properly handle locale and timezone" do
+        port = 5511
+        event_count = 10
 
-      queue.pop
+        conf = <<-CONFIG
+          input {
+            syslog {
+              type => "blah"
+              port => #{port}
+              locale => "en"
+              timezone => "UTC"
+            }
+          }
+        CONFIG
+
+        events = input(conf) do |pipeline, queue|
+          socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+          event_count.times do |i|
+            socket.puts(SYSLOG_LINE)
+          end
+          socket.close
+
+          event_count.times.collect { queue.pop }
+        end
+
+        expect( events.length ).to eql event_count
+        events.each do |event|
+          expect( event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T15:19:25.000Z"
+        end
+      end
+
+      it "should properly handle no locale and no timezone" do
+        port = 5511
+
+        conf = <<-CONFIG
+          input {
+            syslog {
+              type => "blah"
+              port => #{port}
+            }
+          }
+        CONFIG
+
+        event = input(conf) do |pipeline, queue|
+          socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+          socket.puts(SYSLOG_LINE)
+          socket.close
+
+          queue.pop
+        end
+
+        # chances platform timezone is not UTC so ignore the hours
+        expect( event.get("@timestamp").to_iso8601 ).to match /#{Time.now.year}-10-26T\d\d:19:25.000Z/
+      end
+
+      it "should support non UTC timezone" do
+        input = LogStash::Inputs::Syslog.new({"timezone" => "-05:00"})
+        input.register
+
+        # event which is not syslog should have a new tag
+
+        syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
+        input.syslog_relay(syslog_event)
+
+        expect( syslog_event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T20:19:25.000Z"
+
+        input.close
+      end
+
     end
-
-    # chances platform timezone is not UTC so ignore the hours
-    expect( event.get("@timestamp").to_iso8601 ).to match /#{Time.now.year}-10-26T\d\d:19:25.000Z/
-  end
-
-  it "should support non UTC timezone" do
-    input = LogStash::Inputs::Syslog.new({"timezone" => "-05:00"})
-    input.register
-
-    # event which is not syslog should have a new tag
-
-    syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
-    input.syslog_relay(syslog_event)
-    expect( syslog_event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T20:19:25.000Z"
-
-    input.close
   end
 
   it "should add unique tag when grok parsing fails" do
