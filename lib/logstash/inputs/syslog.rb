@@ -26,7 +26,7 @@ require "stud/interval"
 # Note: This input will start listeners on both TCP and UDP.
 #
 class LogStash::Inputs::Syslog < LogStash::Inputs::Base
-  include LogStash::PluginMixins::ECSCompatibilitySupport
+  include LogStash::PluginMixins::ECSCompatibilitySupport(:disabled, :v1)
 
   config_name "syslog"
 
@@ -80,30 +80,15 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   def initialize(*params)
     super
 
-    if ecs_compatibility_enabled?
-      @priority_key = '[log][syslog][priority]'.freeze
-      @facility_key = '[log][syslog][facility][code]'.freeze
-      @severity_key = '[log][syslog][severity][code]'.freeze
+    @priority_key = ecs_select[disabled:'priority', v1:'[log][syslog][priority]']
+    @facility_key = ecs_select[disabled:'facility', v1:'[log][syslog][facility][code]']
+    @severity_key = ecs_select[disabled:'severity', v1:'[log][syslog][severity][code]']
 
-      @facility_label_key = '[log][syslog][facility][name]'.freeze
-      @severity_label_key = '[log][syslog][severity][name]'.freeze
+    @facility_label_key = ecs_select[disabled:'facility_label', v1:'[log][syslog][facility][name]']
+    @severity_label_key = ecs_select[disabled:'severity_label', v1:'[log][syslog][severity][name]']
 
-      @source_key = '[source][ip]'.freeze
+    @source_key = ecs_select[disabled:'host', v1:'[source][ip]']
 
-      @grok_pattern ||= "<%{POSINT:#{@priority_key}:int}>%{SYSLOGLINE}"
-    else
-      @priority_key = 'priority'.freeze
-      @facility_key = 'facility'.freeze
-      @severity_key = 'severity'.freeze
-
-      @facility_label_key = 'facility_label'.freeze
-      @severity_label_key = 'severity_label'.freeze
-
-      @source_key = 'host'.freeze
-
-      @grok_pattern ||= "<%{POSINT:#{@priority_key}}>%{SYSLOGLINE}"
-    end
-  end
 
   def register
     @metric_errors = metric.namespace(:errors)
