@@ -87,7 +87,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @facility_label_key = ecs_select[disabled:'facility_label', v1:'[log][syslog][facility][name]']
     @severity_label_key = ecs_select[disabled:'severity_label', v1:'[log][syslog][severity][name]']
 
-    @source_key = ecs_select[disabled:'host', v1:'[source][ip]']
+    @host_key = ecs_select[disabled:'host', v1:'[host][ip]']
 
     @grok_pattern ||= ecs_select[
         disabled:"<%{POSINT:#{@priority_key}}>%{SYSLOGLINE}",
@@ -255,10 +255,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     socket.close rescue log_and_squash(:close_tcp_receiver_socket)
   end
 
-  def decode(host, output_queue, data)
+  def decode(ip, output_queue, data)
     @codec.decode(data) do |event|
       decorate(event)
-      event.set(@source_key, host) # do we also want to capture source.port ?
+      event.set(@host_key, ip)
       syslog_relay(event)
       output_queue << event
       metric.increment(:events)
