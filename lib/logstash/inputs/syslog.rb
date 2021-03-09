@@ -116,7 +116,11 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     )
 
     @date_filter_exec = ecs_select[
-        disabled: -> (event) { @date_filter.filter(event) },
+        disabled: -> (event) {
+          # in legacy (non-ecs) mode we used to match (SYSLOGBASE2) timestamp into two fields
+          event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
+          @date_filter.filter(event)
+        },
         v1: -> (event) {
           @date_filter.filter(event)
           event.remove('timestamp')
@@ -318,8 +322,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
       priority = event.get(@priority_key).to_i rescue 13
       set_priority event, priority
 
-      # in legacy (non-ecs) mode we used to match (SYSLOGBASE2) timestamp into two fields
-      event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
       @date_filter_exec.(event)
 
     else
