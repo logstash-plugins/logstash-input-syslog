@@ -77,6 +77,12 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   #
   config :locale, :validate => :string
 
+  # ECS only option to configure [service][type] value in produced events.
+  #
+  # NOTE: for now, purposefully un-documented as there are other [service] fields we could support,
+  # assuming users would want that (they have specific use-case for LS as syslog server).
+  config :service_type, :validate => :string, :default => 'system'
+
   def initialize(*params)
     super
 
@@ -106,6 +112,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
         v1: -> (event) {
           event.set('[event][original]', event.get(@syslog_field))
           @grok_filter.filter(event)
+          set_service_fields(event)
         }
     ]
 
@@ -357,6 +364,13 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     severity_label = @severity_labels[severity_number]
     event.set(@severity_label_key, severity_label) if severity_label
+  end
+
+  def set_service_fields(event)
+    service_type = @service_type
+    if service_type && !service_type.empty?
+      event.set('[service][type]', service_type) unless event.include?('[service][type]')
+    end
   end
 
 end # class LogStash::Inputs::Syslog

@@ -259,6 +259,12 @@ describe LogStash::Inputs::Syslog do
         expect( event.get('log') ).to include 'syslog' => hash_including('severity' => { 'code' => 4, 'name' => 'Warning' })
       end
 
+      it "sets service type" do
+        subject.syslog_relay(event)
+
+        expect( event.get('service') ).to include 'type' => 'system'
+      end
+
       let(:queue) { Queue.new }
 
       let(:socket) do
