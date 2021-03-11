@@ -217,10 +217,13 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # tcp_receiver is executed in a thread, any uncatched exception will be bubbled up to the
   # tcp server thread and all tcp connections will be closed and the listener restarted.
   def tcp_receiver(output_queue, socket)
-    ip, port = socket.peeraddr[3], socket.peeraddr[1]
-    first_read = true
+    peer_addr = socket.peeraddr
+    ip, port = peer_addr[3], peer_addr[1]
+
     @logger.info("new connection", :client => "#{ip}:#{port}")
     LogStash::Util::set_thread_name("input|syslog|tcp|#{ip}:#{port}}")
+
+    first_read = true
 
     socket.each do |line|
       metric.increment(:messages_received)
@@ -229,10 +232,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
         pp_info = line.split(/\s/)
         # PROXY proto clientip proxyip clientport proxyport
         if pp_info[0] != "PROXY"
-          @logger.error("invalid proxy protocol header label", :hdr => line)
+          @logger.error("invalid proxy protocol header label", header: line)
           raise IOError
         else
-          # would be nice to log the proxy host and port data as well, but minimizing changes
+          @logger.debug("proxy protocol detected", header: line)
           ip = pp_info[2]
           port = pp_info[3]
           next
