@@ -259,10 +259,22 @@ describe LogStash::Inputs::Syslog do
         expect( event.get('log') ).to include 'syslog' => hash_including('severity' => { 'code' => 4, 'name' => 'Warning' })
       end
 
-      it "sets host-name" do
-        subject.syslog_relay(event)
+      let(:queue) { Queue.new }
 
-        expect( event.get('host') ).to eql 'hostname' => '1.2.3.4'
+      let(:socket) do
+        server = double('tcp-server')
+        allow( server ).to receive(:each).and_yield "<133>Mar 11 08:44:43 precision kernel: [765135.424096] mce: CPU6: Package temperature/speed normal\n"
+        allow( server ).to receive(:close)
+        server
+      end
+
+      it "sets host IP" do
+        expect( socket ).to receive(:peeraddr).and_return(["AF_INET", 514, "192.168.0.10", "192.168.0.10"])
+        subject.send :tcp_receiver, queue, socket
+
+        expect( queue.size ).to eql 1
+        event = queue.pop
+        expect( event.get('host') ).to eql 'hostname' => 'precision', 'ip' => '192.168.0.10'
       end
     end
   end
