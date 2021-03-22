@@ -6,6 +6,7 @@ require "logstash/filters/grok"
 require "logstash/filters/date"
 require "logstash/inputs/base"
 require "logstash/namespace"
+require 'logstash/plugin_mixins/ecs_compatibility_support'
 require "stud/interval"
 
 # Read syslog messages as events over the network.
@@ -25,6 +26,8 @@ require "stud/interval"
 # Note: This input will start listeners on both TCP and UDP.
 #
 class LogStash::Inputs::Syslog < LogStash::Inputs::Base
+  include LogStash::PluginMixins::ECSCompatibilitySupport(:disabled, :v1)
+
   config_name "syslog"
 
   default :codec, "plain"
@@ -42,7 +45,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
   # Set custom grok pattern to parse the syslog, in case the format differs
   # from the defined standard.  This is common in security and other appliances
-  config :grok_pattern, :validate => :string, :default => "<%{POSINT:priority}>%{SYSLOGLINE}"
+  config :grok_pattern, :validate => :string
 
   # Proxy protocol support, only v1 is supported at this time
   # http://www.haproxy.org/download/1.5/doc/proxy-protocol.txt
@@ -74,21 +77,66 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   #
   config :locale, :validate => :string
 
-  public
-  def register
-    @metric_errors = metric.namespace(:errors)
+  # ECS only option to configure [service][type] value in produced events.
+  #
+  # NOTE: for now, purposefully un-documented as there are other [service] fields we could support,
+  # assuming users would want that (they have specific use-case for LS as syslog server).
+  config :service_type, :validate => :string, :default => 'system'
+
+  def initialize(*params)
+    super
+
+    @priority_key = ecs_select[disabled:'priority', v1:'[log][syslog][priority]']
+    @facility_key = ecs_select[disabled:'facility', v1:'[log][syslog][facility][code]']
+    @severity_key = ecs_select[disabled:'severity', v1:'[log][syslog][severity][code]']
+
+    @facility_label_key = ecs_select[disabled:'facility_label', v1:'[log][syslog][facility][name]']
+    @severity_label_key = ecs_select[disabled:'severity_label', v1:'[log][syslog][severity][name]']
+
+    @host_key = ecs_select[disabled:'host', v1:'[host][ip]']
+
+    @grok_pattern ||= ecs_select[
+        disabled:"<%{POSINT:#{@priority_key}}>%{SYSLOGLINE}",
+        v1:"<%{POSINT:#{@priority_key}:int}>%{SYSLOGLINE}"
+    ]
 
     @grok_filter = LogStash::Filters::Grok.new(
-      "overwrite" => @syslog_field,
-      "match" => { @syslog_field => @grok_pattern },
-      "tag_on_failure" => ["_grokparsefailure_sysloginput"],
+        "overwrite" => @syslog_field,
+        "match" => { @syslog_field => @grok_pattern },
+        "tag_on_failure" => ["_grokparsefailure_sysloginput"],
+        "ecs_compatibility" => ecs_compatibility # use ecs-compliant patterns
     )
 
+    @grok_filter_exec = ecs_select[
+        disabled: -> (event) { @grok_filter.filter(event) },
+        v1: -> (event) {
+          event.set('[event][original]', event.get(@syslog_field))
+          @grok_filter.filter(event)
+          set_service_fields(event)
+        }
+    ]
+
     @date_filter = LogStash::Filters::Date.new(
-      "match" => [ "timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "ISO8601"],
-      "locale" => @locale,
-      "timezone" => @timezone,
+        "match" => [ "timestamp", "MMM dd HH:mm:ss", "MMM  d HH:mm:ss", "MMM d HH:mm:ss", "ISO8601"],
+        "locale" => @locale,
+        "timezone" => @timezone,
     )
+
+    @date_filter_exec = ecs_select[
+        disabled: -> (event) {
+          # in legacy (non-ecs) mode we used to match (SYSLOGBASE2) timestamp into two fields
+          event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
+          @date_filter.filter(event)
+        },
+        v1: -> (event) {
+          @date_filter.filter(event)
+          event.remove('timestamp')
+        }
+    ]
+  end
+
+  def register
+    @metric_errors = metric.namespace(:errors)
 
     @grok_filter.register
     @date_filter.register
@@ -97,7 +145,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @tcp = @udp = nil
   end # def register
 
-  public
+  private
+
   def run(output_queue)
     udp_thr = Thread.new(output_queue) do |output_queue|
       server(:udp, output_queue)
@@ -112,8 +161,8 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     udp_thr.join
     tcp_thr.join
   end # def run
+  public :run
 
-  private
   # server call the specified protocol listener and basically restarts on
   # any listener uncatched exception
   #
@@ -130,7 +179,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     end
   end
 
-  private
   # udp_listener creates the udp socket and continously read from it.
   # upon exception the socket will be closed and the exception bubbled
   # in the server which will restart the listener
@@ -151,7 +199,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     close_udp
   end # def udp_listener
 
-  private
   # tcp_listener accepts tcp connections and creates a new tcp_receiver thread
   # for each accepted socket.
   # upon exception all tcp sockets will be closed and the exception bubbled
@@ -177,10 +224,13 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # tcp_receiver is executed in a thread, any uncatched exception will be bubbled up to the
   # tcp server thread and all tcp connections will be closed and the listener restarted.
   def tcp_receiver(output_queue, socket)
-    ip, port = socket.peeraddr[3], socket.peeraddr[1]
-    first_read = true
+    peer_addr = socket.peeraddr
+    ip, port = peer_addr[3], peer_addr[1]
+
     @logger.info("new connection", :client => "#{ip}:#{port}")
     LogStash::Util::set_thread_name("input|syslog|tcp|#{ip}:#{port}}")
+
+    first_read = true
 
     socket.each do |line|
       metric.increment(:messages_received)
@@ -189,10 +239,10 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
         pp_info = line.split(/\s/)
         # PROXY proto clientip proxyip clientport proxyport
         if pp_info[0] != "PROXY"
-          @logger.error("invalid proxy protocol header label", :hdr => line)
+          @logger.error("invalid proxy protocol header label", header: line)
           raise IOError
         else
-          # would be nice to log the proxy host and port data as well, but minimizing changes
+          @logger.debug("proxy protocol detected", header: line)
           ip = pp_info[2]
           port = pp_info[3]
           next
@@ -206,20 +256,19 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   rescue Errno::EBADF
     # swallow connection closed exceptions to avoid bubling up the tcp_listener & server
     logger.info("connection closed", :client => "#{ip}:#{port}")
-  rescue IOError => ioerror
+  rescue IOError => e
     # swallow connection closed exceptions to avoid bubling up the tcp_listener & server
-    raise unless socket.closed? && ioerror.message.include?("closed")
-    logger.info("connection error: #{ioerror.message}")
+    raise(e) unless socket.closed? && e.message.to_s.include?("closed")
+    logger.info("connection error:", :exception => e.class, :message => e.message)
   ensure
     @tcp_sockets.delete(socket)
     socket.close rescue log_and_squash(:close_tcp_receiver_socket)
   end
 
-  private
-  def decode(host, output_queue, data)
+  def decode(ip, output_queue, data)
     @codec.decode(data) do |event|
       decorate(event)
-      event.set("host", host)
+      event.set(@host_key, ip)
       syslog_relay(event)
       output_queue << event
       metric.increment(:events)
@@ -230,13 +279,13 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     @metric_errors.increment(:decoding)
   end
 
-  public
+  # @see LogStash::Plugin#close
   def stop
     close_udp
     close_tcp
   end
+  public :stop
 
-  private
   def close_udp
     if @udp
       @udp.close_read rescue log_and_squash(:close_udp_read)
@@ -244,8 +293,6 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     end
     @udp = nil
   end
-
-  private
 
   # Helper for inline rescues, which logs the exception at "DEBUG" level and returns nil.
   #
@@ -276,46 +323,54 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   # If the message cannot be recognized (see @grok_filter), we'll
   # treat it like the whole event["message"] is correct and try to fill
   # the missing pieces (host, priority, etc)
-  public
   def syslog_relay(event)
-    @grok_filter.filter(event)
+    @grok_filter_exec.(event)
 
     if event.get("tags").nil? || !event.get("tags").include?(@grok_filter.tag_on_failure)
       # Per RFC3164, priority = (facility * 8) + severity
       #                       = (facility << 3) & (severity)
-      priority = event.get("priority").to_i rescue 13
-      severity = priority & 7   # 7 is 111 (3 bits)
-      facility = priority >> 3
-      event.set("priority", priority)
-      event.set("severity", severity)
-      event.set("facility", facility)
+      priority = event.get(@priority_key).to_i rescue 13
+      set_priority event, priority
 
-      event.set("timestamp", event.get("timestamp8601")) if event.include?("timestamp8601")
-      @date_filter.filter(event)
+      @date_filter_exec.(event)
+
     else
-      @logger.debug? && @logger.debug("NOT SYSLOG", :message => event.get("message"))
+      @logger.debug? && @logger.debug("un-matched syslog message", :message => event.get("message"))
 
       # RFC3164 says unknown messages get pri=13
-      priority = 13
-      event.set("priority", 13)
-      event.set("severity", 5)   # 13 & 7 == 5
-      event.set("facility", 1)   # 13 >> 3 == 1
+      set_priority event, 13
       metric.increment(:unknown_messages)
     end
 
-    # Apply severity and facility metadata if
-    # use_labels => true
-    if @use_labels
-      facility_number = event.get("facility")
-      severity_number = event.get("severity")
-
-      if @facility_labels[facility_number]
-        event.set("facility_label", @facility_labels[facility_number])
-      end
-
-      if @severity_labels[severity_number]
-        event.set("severity_label", @severity_labels[severity_number])
-      end
-    end
+    # Apply severity and facility metadata if use_labels => true
+    set_labels(event) if @use_labels
   end # def syslog_relay
+  public :syslog_relay
+
+  def set_priority(event, priority)
+    severity = priority & 7 # 7 is 111 (3 bits)
+    facility = priority >> 3
+    event.set(@priority_key, priority)
+    event.set(@severity_key, severity)
+    event.set(@facility_key, facility)
+  end
+
+  def set_labels(event)
+    facility_number = event.get(@facility_key)
+    severity_number = event.get(@severity_key)
+
+    facility_label = @facility_labels[facility_number]
+    event.set(@facility_label_key, facility_label) if facility_label
+
+    severity_label = @severity_labels[severity_number]
+    event.set(@severity_label_key, severity_label) if severity_label
+  end
+
+  def set_service_fields(event)
+    service_type = @service_type
+    if service_type && !service_type.empty?
+      event.set('[service][type]', service_type) unless event.include?('[service][type]')
+    end
+  end
+
 end # class LogStash::Inputs::Syslog

@@ -1,3 +1,6 @@
+## 3.5.0
+  - Feat: ECS compatibility support [#63](https://github.com/logstash-plugins/logstash-input-syslog/pull/63)
+
 ## 3.4.5
   - Added support for listening on IPv6 addresses
 
