@@ -1,3 +1,6 @@
+## 3.6.0
+  - Add support for ECS v8 as alias to v1 implementation
+
 ## 3.5.0
   - Feat: ECS compatibility support [#63](https://github.com/logstash-plugins/logstash-input-syslog/pull/63)
 

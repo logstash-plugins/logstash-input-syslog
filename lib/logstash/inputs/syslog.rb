@@ -26,7 +26,7 @@ require "stud/interval"
 # Note: This input will start listeners on both TCP and UDP.
 #
 class LogStash::Inputs::Syslog < LogStash::Inputs::Base
-  include LogStash::PluginMixins::ECSCompatibilitySupport(:disabled, :v1)
+  include LogStash::PluginMixins::ECSCompatibilitySupport(:disabled, :v1, :v8 => :v1)
 
   config_name "syslog"
 

@@ -100,7 +100,7 @@ describe LogStash::Inputs::Syslog do
   end
 
   context 'tag', :ecs_compatibility_support do
-    ecs_compatibility_matrix(:disabled, :v1) do
+    ecs_compatibility_matrix(:disabled, :v1, :v8 => :v1) do
 
       before(:each) do
         allow_any_instance_of(described_class).to receive(:ecs_compatibility).and_return(ecs_compatibility)
