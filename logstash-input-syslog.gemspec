@@ -30,7 +30,7 @@ Gem::Specification.new do |s|
   s.add_runtime_dependency 'logstash-filter-grok', '>= 4.4.1'
   s.add_runtime_dependency 'logstash-filter-date'
 
-  s.add_development_dependency 'logstash-devutils'
+  s.add_development_dependency 'logstash-devutils', '~> 2.3'
   s.add_development_dependency 'logstash-codec-cef'
 end
 

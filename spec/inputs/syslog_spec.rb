@@ -172,7 +172,7 @@ describe LogStash::Inputs::Syslog do
 
         expect( events.length ).to eql event_count
         events.each do |event|
-          expect( event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T15:19:25.000Z"
+          expect( event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to("#{Time.now.year}-10-26T15:19:25Z")
         end
       end
 
@@ -196,8 +196,9 @@ describe LogStash::Inputs::Syslog do
           queue.pop
         end
 
-        # chances platform timezone is not UTC so ignore the hours
-        expect( event.get("@timestamp").to_iso8601 ).to match /#{Time.now.year}-10-26T\d\d:19:25.000Z/
+        # chances platform timezone is not UTC, so parse without offset to create expectation
+        equivalent_time = Time.parse("#{Time.now.year}-10-26T15:19:25")
+        expect( event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to(equivalent_time)
       end
 
       it "should support non UTC timezone" do
@@ -209,7 +210,7 @@ describe LogStash::Inputs::Syslog do
         syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
         input.syslog_relay(syslog_event)
 
-        expect( syslog_event.get("@timestamp").to_iso8601 ).to eql "#{Time.now.year}-10-26T20:19:25.000Z"
+        expect( syslog_event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to("#{Time.now.year}-10-26T20:19:25Z")
 
         input.close
       end
