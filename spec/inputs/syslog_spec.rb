@@ -58,6 +58,7 @@ describe LogStash::Inputs::Syslog do
 
     expect( events.length ).to eql event_count
     events.each do |event|
+      puts "ECS field: #{event.get('[log][syslog][priority]')}"
       expect( event.get("priority") ).to eql 164
       expect( event.get("severity") ).to eql 4
       expect( event.get("facility") ).to eql 20
