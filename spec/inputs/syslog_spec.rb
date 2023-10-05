@@ -33,80 +33,18 @@ require "socket"
 describe LogStash::Inputs::Syslog do
   SYSLOG_LINE = "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434 dst outside:192.168.0.1/53 by access-group \"acl_drac\" [0x0, 0x0]"
 
-  it "should properly handle priority, severity and facilities" do
-    skip_if_stack_known_issue
-    port = 5511
-    event_count = 10
-    conf = <<-CONFIG
-      input {
-        syslog {
-          type => "blah"
-          port => #{port}
-        }
-      }
-    CONFIG
-
-    events = input(conf) do |pipeline, queue|
-      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-      event_count.times do |i|
-        socket.puts(SYSLOG_LINE)
-      end
-      socket.close
-
-      event_count.times.collect { queue.pop }
-    end
-
-    expect( events.length ).to eql event_count
-    events.each do |event|
-      expect( event.get("priority") ).to eql 164
-      expect( event.get("severity") ).to eql 4
-      expect( event.get("facility") ).to eql 20
-    end
-  end
-
-  it "should properly PROXY protocol v1" do
-    skip_if_stack_known_issue
-    port = 5511
-    event_count = 10
-    conf = <<-CONFIG
-      input {
-        syslog {
-          type => "blah"
-          port => #{port}
-          proxy_protocol => true
-        }
-      }
-    CONFIG
-
-    events = input(conf) do |pipeline, queue|
-      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-      socket.puts("PROXY TCP4 1.2.3.4 5.6.7.8 1234 5678\r");
-      socket.flush
-      event_count.times do |i|
-        socket.puts(SYSLOG_LINE)
-      end
-      socket.close
-
-      event_count.times.collect { queue.pop }
-    end
-
-    expect( events.length ).to eql event_count
-    events.each do |event|
-      expect( event.get("priority") ).to eql 164
-      expect( event.get("severity") ).to eql 4
-      expect( event.get("facility") ).to eql 20
-      expect( event.get("host") ).to eql "1.2.3.4"
-    end
-  end
-
-  context 'tag', :ecs_compatibility_support do
-    ecs_compatibility_matrix(:disabled, :v1, :v8 => :v1) do
+  context 'ECS common behavior', :ecs_compatibility_support do
+    ecs_compatibility_matrix(:disabled, :v1, :v8 => :v1) do |ecs_select|
+      let(:priority_key) { ecs_select[disabled:'priority', v1:'[log][syslog][priority]'] }
+      let(:facility_key) { ecs_select[disabled:'facility', v1:'[log][syslog][facility][code]'] }
+      let(:severity_key) { ecs_select[disabled:'severity', v1:'[log][syslog][severity][code]'] }
+      let(:host_key) { ecs_select[disabled:'host', v1:'[host][ip]'] }
 
       before(:each) do
         allow_any_instance_of(described_class).to receive(:ecs_compatibility).and_return(ecs_compatibility)
       end
 
-      it "should add unique tag when grok parsing fails with live syslog input" do
+      it "should properly handle priority, severity and facilities" do
         skip_if_stack_known_issue
         port = 5511
         event_count = 10
@@ -115,47 +53,6 @@ describe LogStash::Inputs::Syslog do
             syslog {
               type => "blah"
               port => #{port}
-            }
-          }
-        CONFIG
-
-        events = input(conf) do |pipeline, queue|
-          socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-          event_count.times do |i|
-            socket.puts("message which causes the a grok parse failure")
-          end
-          socket.close
-
-          event_count.times.collect { queue.pop }
-        end
-
-        expect( events.length ).to eql event_count
-        event_count.times do |i|
-          expect( events[i].get("tags") ).to eql ["_grokparsefailure_sysloginput"]
-        end
-      end
-
-    end
-  end
-
-  context 'timestamp', :ecs_compatibility_support do
-    ecs_compatibility_matrix(:disabled, :v1) do
-
-      before(:each) do
-        allow_any_instance_of(described_class).to receive(:ecs_compatibility).and_return(ecs_compatibility)
-      end
-
-      it "should properly handle locale and timezone" do
-        port = 5511
-        event_count = 10
-
-        conf = <<-CONFIG
-          input {
-            syslog {
-              type => "blah"
-              port => #{port}
-              locale => "en"
-              timezone => "UTC"
             }
           }
         CONFIG
@@ -172,53 +69,251 @@ describe LogStash::Inputs::Syslog do
 
         expect( events.length ).to eql event_count
         events.each do |event|
-          expect( event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to("#{Time.now.year}-10-26T15:19:25Z")
+          expect( event.get(priority_key) ).to eql 164
+          expect( event.get(severity_key) ).to eql 4
+          expect( event.get(facility_key) ).to eql 20
         end
       end
 
-      it "should properly handle no locale and no timezone" do
+      it "should properly PROXY protocol v1" do
+        skip_if_stack_known_issue
         port = 5511
-
+        event_count = 10
         conf = <<-CONFIG
           input {
             syslog {
               type => "blah"
               port => #{port}
+              proxy_protocol => true
             }
           }
         CONFIG
 
-        event = input(conf) do |pipeline, queue|
+        events = input(conf) do |pipeline, queue|
           socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-          socket.puts(SYSLOG_LINE)
+          socket.puts("PROXY TCP4 1.2.3.4 5.6.7.8 1234 5678\r\n")
+          socket.flush
+          event_count.times do |i|
+            socket.puts(SYSLOG_LINE)
+          end
           socket.close
 
-          queue.pop
+          event_count.times.collect { queue.pop }
         end
 
-        # chances platform timezone is not UTC, so parse without offset to create expectation
-        equivalent_time = Time.parse("#{Time.now.year}-10-26T15:19:25")
-        expect( event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to(equivalent_time)
+        expect( events.length ).to eql event_count
+        events.each do |event|
+          expect( event.get(priority_key) ).to eql 164
+          expect( event.get(severity_key) ).to eql 4
+          expect( event.get(facility_key) ).to eql 20
+          expect( event.get(host_key) ).to eql "1.2.3.4"
+        end
       end
 
-      it "should support non UTC timezone" do
-        input = LogStash::Inputs::Syslog.new({"timezone" => "-05:00"})
-        input.register
+      context 'grok' do
+        it "should add unique tag when grok parsing fails with live syslog input" do
+          skip_if_stack_known_issue
+          port = 5511
+          event_count = 10
+          conf = <<-CONFIG
+            input {
+              syslog {
+                type => "blah"
+                port => #{port}
+              }
+            }
+          CONFIG
+          events = input(conf) do |pipeline, queue|
+            socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+            event_count.times do |i|
+              socket.puts("message which causes the a grok parse failure")
+            end
+            socket.close
+            event_count.times.collect { queue.pop }
+          end
+          expect( events.length ).to eql event_count
+          event_count.times do |i|
+            expect( events[i].get("tags") ).to eql ["_grokparsefailure_sysloginput"]
+          end
+        end
 
-        # event which is not syslog should have a new tag
+        it "should add unique tag when grok parsing fails" do
+          input = LogStash::Inputs::Syslog.new({})
+          input.register
 
-        syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
-        input.syslog_relay(syslog_event)
+          # event which is not syslog should have a new tag
+          event = LogStash::Event.new({ "message" => "hello world, this is not syslog RFC3164" })
+          input.syslog_relay(event)
+          expect( event.get("tags") ).to eql  ["_grokparsefailure_sysloginput"]
 
-        expect( syslog_event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to("#{Time.now.year}-10-26T20:19:25Z")
+          syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
+          input.syslog_relay(syslog_event)
+          expect( syslog_event.get(priority_key) ).to eql 164
+          expect( syslog_event.get(severity_key) ).to eql 4
+          expect( syslog_event.get("tags") ).to be nil
 
-        input.close
+          input.close
+        end
+
+        it "should properly handle a custom grok_pattern" do
+          port = 5511
+          event_count = 1
+          custom_grok = "<%{POSINT:#{priority_key}}>%{SYSLOGTIMESTAMP:timestamp} atypical %{GREEDYDATA:message}"
+          message_field = "This part constitutes the message field"
+          timestamp = "Oct 26 15:19:25"
+          custom_line = "<164>#{timestamp} atypical #{message_field}"
+
+          conf = <<-CONFIG
+            input {
+              syslog {
+                type => "blah"
+                port => #{port}
+                grok_pattern => "#{custom_grok}"
+              }
+            }
+          CONFIG
+
+          events = input(conf) do |pipeline, queue|
+            socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+            event_count.times do |i|
+              socket.puts(custom_line)
+            end
+            socket.close
+
+            event_count.times.collect { queue.pop }
+          end
+
+          expect( events.length ).to eql event_count
+          events.each do |event|
+            expect( event.get(priority_key) ).to eql 164
+            expect( event.get(severity_key) ).to eql 4
+            expect( event.get(facility_key) ).to eql 20
+            expect( event.get("message") ).to eql "#{message_field}\n"
+            expect( event.get('timestamp') ).to eql timestamp if ecs_compatibility == :disabled
+            expect( event.include?('timestamp') ).to be false if ecs_compatibility != :disabled
+          end
+        end
+
+        it "should properly handle the cef codec with a custom grok_pattern" do
+          port = 5511
+          event_count = 1
+
+          custom_grok = "<%{POSINT:#{priority_key}}>%{TIMESTAMP_ISO8601:timestamp} atypical %{GREEDYDATA:syslog_message}"
+          timestamp = "2018-02-07T12:40:00.000Z"
+          cef_message = "Description Omitted"
+          syslog_message = "foo bar"
+          syslog_message_envelope = "<134>#{timestamp} atypical #{syslog_message}"
+          custom_line = "CEF:0|Company Name|Application Name|Application Version Number|632|Syslog Configuration Updated|3|src=192.168.0.1 suser=user@example.com target=TARGET msg=#{cef_message} syslog=#{syslog_message_envelope} KeyValueOne=kv1 KeyValueTwo=12345 "
+
+          conf = <<-CONFIG
+            input {
+              syslog {
+                port => #{port}
+                syslog_field => "syslog"
+                grok_pattern => "#{custom_grok}"
+                codec => cef { ecs_compatibility => #{ ecs_compatibility } }
+              }
+            }
+          CONFIG
+
+          events = input(conf) do |pipeline, queue|
+            socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+            event_count.times do |i|
+              socket.puts(custom_line)
+            end
+            socket.close
+
+            event_count.times.collect { queue.pop }
+          end
+
+          expect( events.length ).to eql event_count
+          events.each do |event|
+            expect( event.get(priority_key) ).to eql 134
+            expect( event.get(severity_key) ).to eql 6
+            expect( event.get(facility_key) ).to eql 16
+            expect( event.get("message") ).to eql cef_message
+            expect( event.get("syslog_message") ).to eql syslog_message
+            expect( event.get('timestamp') ).to eql timestamp if ecs_compatibility == :disabled
+            expect( event.include?('timestamp') ).to be false if ecs_compatibility != :disabled
+          end
+        end
       end
 
+      context 'timestamp' do
+        it "should properly handle locale and timezone" do
+          port = 5511
+          event_count = 10
+
+          conf = <<-CONFIG
+            input {
+              syslog {
+                type => "blah"
+                port => #{port}
+                locale => "en"
+                timezone => "UTC"
+              }
+            }
+          CONFIG
+
+          events = input(conf) do |pipeline, queue|
+            socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+            event_count.times do |i|
+              socket.puts(SYSLOG_LINE)
+            end
+            socket.close
+
+            event_count.times.collect { queue.pop }
+          end
+
+          expect( events.length ).to eql event_count
+          events.each do |event|
+            expect( event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to("#{Time.now.year}-10-26T15:19:25Z")
+          end
+        end
+
+        it "should properly handle no locale and no timezone" do
+          port = 5511
+
+          conf = <<-CONFIG
+            input {
+              syslog {
+                type => "blah"
+                port => #{port}
+              }
+            }
+          CONFIG
+
+          event = input(conf) do |pipeline, queue|
+            socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
+            socket.puts(SYSLOG_LINE)
+            socket.close
+
+            queue.pop
+          end
+
+          # chances platform timezone is not UTC, so parse without offset to create expectation
+          equivalent_time = Time.parse("#{Time.now.year}-10-26T15:19:25")
+          expect( event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to(equivalent_time)
+        end
+
+        it "should support non UTC timezone" do
+          input = LogStash::Inputs::Syslog.new({"timezone" => "-05:00"})
+          input.register
+
+          # event which is not syslog should have a new tag
+
+          syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
+          input.syslog_relay(syslog_event)
+
+          expect( syslog_event.get("@timestamp") ).to be_a_logstash_timestamp_equivalent_to("#{Time.now.year}-10-26T20:19:25Z")
+
+          input.close
+        end
+      end
     end
   end
 
-  context 'ECS behavior', :ecs_compatibility_support do
+  context 'ECS :v1 behavior', :ecs_compatibility_support do
 
     ecs_compatibility_matrix(:v1) do
 
@@ -270,7 +365,7 @@ describe LogStash::Inputs::Syslog do
 
       let(:socket) do
         server = double('tcp-server')
-        allow( server ).to receive(:each).and_yield "<133>Mar 11 08:44:43 precision kernel: [765135.424096] mce: CPU6: Package temperature/speed normal\n"
+        allow( subject ).to receive(:tcp_read_lines).and_yield("<133>Mar 11 08:44:43 precision kernel: [765135.424096] mce: CPU6: Package temperature/speed normal\n")
         allow( server ).to receive(:close)
         server
       end
@@ -286,103 +381,51 @@ describe LogStash::Inputs::Syslog do
     end
   end
 
-  it "should add unique tag when grok parsing fails" do
-    input = LogStash::Inputs::Syslog.new({})
-    input.register
+  context 'tcp receiver' do
+    subject(:plugin) { LogStash::Inputs::Syslog.new }
+    before { plugin.register }
+    after { plugin.close }
 
-    # event which is not syslog should have a new tag
-    event = LogStash::Event.new({ "message" => "hello world, this is not syslog RFC3164" })
-    input.syslog_relay(event)
-    expect( event.get("tags") ).to eql  ["_grokparsefailure_sysloginput"]
+    let(:queue) { Queue.new }
+    let(:socket) do
+      socket = double('tcp-socket')
+      expect( socket ).to receive(:peeraddr).and_return(["AF_INET", 514, "192.168.0.10", "192.168.0.10"])
+      socket
+    end
 
-    syslog_event = LogStash::Event.new({ "message" => "<164>Oct 26 15:19:25 1.2.3.4 %ASA-4-106023: Deny udp src DRAC:10.1.2.3/43434" })
-    input.syslog_relay(syslog_event)
-    expect( syslog_event.get("priority") ).to eql 164
-    expect( syslog_event.get("severity") ).to eql 4
-    expect( syslog_event.get("tags") ).to be nil
+    it 'should close connection when client sends EOF' do
+      expect( socket ).to receive(:read_nonblock).and_raise(EOFError)
+      expect( socket ).to receive(:close)
+      allow( plugin.logger ).to receive(:info)
 
-    input.close
+      plugin.send :tcp_receiver, queue, socket
+
+      expect( plugin.logger ).to have_received(:info).with(/connection closed/, anything)
+      expect( queue.size ).to eql 0
+    end
+
+    it 'should properly read partially received messages' do
+      expect( socket ).to receive(:close)
+      allow( plugin.codec ).to receive(:decode).and_call_original
+
+      messages = ["<133>Mar 11 08:44:43 localhost message 2\n", "message 1\n", "<133>Mar 11 08:44:43 localhost ", ]
+      allow( socket ).to receive(:read_nonblock).at_least(messages.size).times do
+        msg = messages.pop
+        raise EOFError unless msg
+        msg
+      end
+
+      plugin.send :tcp_receiver, queue, socket
+
+      expect( queue.size ).to eql 2
+      expect( plugin.codec ).to have_received(:decode).with("<133>Mar 11 08:44:43 localhost message 1\n")
+      expect( plugin.codec ).to have_received(:decode).with("<133>Mar 11 08:44:43 localhost message 2\n")
+    end
   end
+
 
   it_behaves_like 'an interruptible input plugin' do
     let(:config) { { "port" => 5511 } }
-  end
-
-  it "should properly handle a custom grok_pattern" do
-    port = 5511
-    event_count = 1
-    custom_grok = "<%{POSINT:priority}>%{SYSLOGTIMESTAMP:timestamp} atypical %{GREEDYDATA:message}"
-    message_field = "This part constitutes the message field"
-    timestamp = "Oct 26 15:19:25"
-    custom_line = "<164>#{timestamp} atypical #{message_field}"
-
-    conf = <<-CONFIG
-      input {
-        syslog {
-          type => "blah"
-          port => #{port}
-          grok_pattern => "#{custom_grok}"
-        }
-      }
-    CONFIG
-
-    events = input(conf) do |pipeline, queue|
-      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-      event_count.times do |i|
-        socket.puts(custom_line)
-      end
-      socket.close
-
-      event_count.times.collect { queue.pop }
-    end
-
-    expect( events.length ).to eql event_count
-    events.each do |event|
-      expect( event.get("priority") ).to eql 164
-      expect( event.get("severity") ).to eql 4
-      expect( event.get("facility") ).to eql 20
-      expect( event.get("message") ).to eql "#{message_field}\n"
-      expect( event.get("timestamp") ).to eql timestamp
-    end
-  end
-
-  it "should properly handle the cef codec with a custom grok_pattern" do
-    port = 5511
-    event_count = 1
-    custom_grok = "<%{POSINT:priority}>%{TIMESTAMP_ISO8601:timestamp} atypical"
-    message_field = "Description Omitted"
-    timestamp = "2018-02-07T12:40:00.000Z"
-    custom_line = "<134>#{timestamp} atypical CEF:0|Company Name|Application Name|Application Version Number|632|Syslog Configuration Updated|3|src=192.168.0.1 suser=user@example.com target=TARGET msg=#{message_field} KeyValueOne=kv1 KeyValueTwo=12345 "
-
-    conf = <<-CONFIG
-      input {
-        syslog {
-          port => #{port}
-          syslog_field => "syslog"
-          grok_pattern => "#{custom_grok}"
-          codec => cef
-        }
-      }
-    CONFIG
-
-    events = input(conf) do |pipeline, queue|
-      socket = Stud.try(5.times) { TCPSocket.new("127.0.0.1", port) }
-      event_count.times do |i|
-        socket.puts(custom_line)
-      end
-      socket.close
-
-      event_count.times.collect { queue.pop }
-    end
-
-    expect( events.length ).to eql event_count
-    events.each do |event|
-      expect( event.get("priority") ).to eql 134
-      expect( event.get("severity") ).to eql 6
-      expect( event.get("facility") ).to eql 16
-      expect( event.get("message") ).to eql message_field
-      expect( event.get("timestamp") ).to eql timestamp
-    end
   end
 
   private

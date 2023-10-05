@@ -1,3 +1,8 @@
+## 3.7.0
+  - Changed the TCP reading mode to use the non-blocking method [#75](https://github.com/logstash-plugins/logstash-input-syslog/pull/75)
+    It fixes the high CPU usage when TCP clients do not properly disconnect/send EOF.
+  - Fixed broken tests
+
 ## 3.6.0
   - Add support for ECS v8 as alias to v1 implementation [#68](https://github.com/logstash-plugins/logstash-input-syslog/pull/68)
 

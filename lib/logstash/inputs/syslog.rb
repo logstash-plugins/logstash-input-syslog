@@ -221,6 +221,21 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     close_tcp
   end # def tcp_listener
 
+  def tcp_read_lines(socket)
+    buffer = String.new
+    loop do
+      begin
+        buffer << socket.read_nonblock(1024)
+        while (newline = buffer.index("\n"))
+          yield buffer.slice!(0..newline)
+        end
+      rescue IO::WaitReadable
+        IO.select([socket], nil)
+        retry
+      end
+    end
+  end
+
   # tcp_receiver is executed in a thread, any uncatched exception will be bubbled up to the
   # tcp server thread and all tcp connections will be closed and the listener restarted.
   def tcp_receiver(output_queue, socket)
@@ -232,7 +247,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
 
     first_read = true
 
-    socket.each do |line|
+    tcp_read_lines(socket) do |line|
       metric.increment(:messages_received)
       if @proxy_protocol && first_read
         first_read = false
@@ -253,7 +268,7 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
   rescue Errno::ECONNRESET
     # swallow connection reset exceptions to avoid bubling up the tcp_listener & server
     logger.info("connection reset", :client => "#{ip}:#{port}")
-  rescue Errno::EBADF
+  rescue Errno::EBADF, EOFError
     # swallow connection closed exceptions to avoid bubling up the tcp_listener & server
     logger.info("connection closed", :client => "#{ip}:#{port}")
   rescue IOError => e
