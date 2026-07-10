@@ -21,13 +21,13 @@ jobs:
   tests:
     if: github.event_name != 'schedule'
     uses: logstash-plugins/.ci/.github/workflows/unit-tests.yml@1.x
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     # Forward org/repo secrets (e.g. SLACK_BOT_TOKEN used by the reusable's
     # failure-notification step). The reusable does not declare a
     # workflow_call.secrets block, so `inherit` is required.
     secrets: inherit
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     with:
       timeout-minutes: 60
 
