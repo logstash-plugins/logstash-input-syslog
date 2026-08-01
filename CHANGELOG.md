@@ -1,3 +1,6 @@
+## 3.8.0
+  - Added support for transparent framing / octet-counting. See [RFC 6587 section 3.4.1](https://www.ietf.org/rfc/rfc6587.txt)
+
 ## 3.7.1
   - Fix issue where the priority field was not being set correctly when grok failed [#76](https://github.com/logstash-plugins/logstash-input-syslog/pull/78)
 

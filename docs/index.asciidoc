@@ -33,8 +33,9 @@ supports `RFC3164` syslog with some small modifications. However, some
 non-standard syslog formats can be read and parsed if a functional
 `grok_pattern` is provided. The date format is still only allowed to be
 `RFC3164` style or `ISO8601`.
+This input supports UDP and TCP. Both TCP transparent and non-transparent framming are supported.
 
-For more information see the http://www.ietf.org/rfc/rfc3164.txt[RFC3164 page].
+For more information on syslog see the http://www.ietf.org/rfc/rfc3164.txt[RFC3164 page] and for more information on TCP framing see the https://www.ietf.org/rfc/rfc6587.txt[RFC 6587 page].
 
 Note: This input will start listeners on both TCP and UDP.
 

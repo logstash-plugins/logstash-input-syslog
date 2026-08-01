@@ -227,16 +227,40 @@ class LogStash::Inputs::Syslog < LogStash::Inputs::Base
     buffer = String.new
     loop do
       begin
-        buffer << socket.read_nonblock(1024)
-        while (newline = buffer.index("\n"))
-          yield buffer.slice!(0..newline)
-        end
+        buffer << socket.read_nonblock(1)
+        break if  buffer.length >= 1
       rescue IO::WaitReadable
         IO.select([socket], nil)
         retry
       end
     end
-  end
+    if buffer[0].match?(/\d/) #Check if the first char is a digit
+      loop do
+        begin
+          buffer << socket.read_nonblock(16)
+          first_space = buffer.index(" ")
+          log_len = Integer(buffer.slice!(0..first_space))
+          buffer << socket.read_nonblock(log_len-buffer.length)
+          yield buffer.slice!(0..log_len)
+        rescue IO::WaitReadable
+          IO.select([socket], nil)
+          retry
+        end
+      end
+    else
+      loop do
+        begin
+          buffer << socket.read_nonblock(1024)
+          while (newline = buffer.index("\n"))
+            yield buffer.slice!(0..newline)
+          end
+        rescue IO::WaitReadable
+          IO.select([socket], nil)
+          retry
+        end
+      end
+    end
+  end 
 
   # tcp_receiver is executed in a thread, any uncatched exception will be bubbled up to the
   # tcp server thread and all tcp connections will be closed and the listener restarted.
